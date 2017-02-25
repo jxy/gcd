@@ -1,0 +1,82 @@
+# system specifics for mira@anl
+
+declare -r gcd_SYS_UNIQUEID=$COBALT_JOBID
+declare -r gcd_SYS_LOCK="$gcd_WORKDIR/.sys.lock.$gcd_SYS_UNIQUEID"	# lock for block operations
+declare -ir gcd_SYS_BLOCKSIZE_DEFAULT=512
+declare -ir gcd_SYS_SIZE=$COBALT_JOBSIZE
+declare -ir gcd_SYS_ENDTIME=$COBALT_ENDTIME
+
+declare gcd_SYS_BOOTEDBLOCK
+
+# gcd_SYS_RUNENV is used without quotes
+declare gcd_SYS_RUNENV+=" TZ=US/Central"
+gcd_SYS_RUNENV+=" PAMID_VERBOSE=1"
+gcd_SYS_RUNENV+=" RUNJOB_VERBOSE=4"
+gcd_SYS_RUNENV+=" OMP_WAIT_POLICY=active"
+gcd_SYS_RUNENV+=" BG_SMP_FAST_WAKEUP=yes"
+gcd_SYS_RUNENV+=" BG_THREADLAYOUT=2"
+# gcd_SYS_RUNENV+=" PAMID_COLLECTIVES=0"
+# gcd_SYS_RUNENV+=" BG_COREDUMPONEXIT=1"
+
+declare -a gcd__SYS_BOOTBLOCK
+declare -ai gcd__SYS_BOOTPID=()
+
+gcd-sys-diagnosis(){	# do some diagnosis of the job
+	# this is the bluegene job id that coreprocessor requires
+	#bgjid=$(sed -n -E '/job.*started/s/^.*job ([0-9]*) started/\1/p' $O.error)
+	#echo "$(date) :: Job $jxy_jid run $nrun start from traj $traj with process $pid had bad health, attach coreprocessor to bgpid $bgjid"
+	#coreprocessor.pl -nogui -j=$bgjid \
+	# -b=/home/osborn/lqcd/install/qhmc-git-c3-spi/bin/qhmc:/bgsys/drivers/ppcfloor/boot/cnk \
+	# -snapshot=core/snapshot.$COBALT_JOBID.$nrun.$bgjid \
+	# >core/processed.$COBALT_JOBID.$nrun.$bgjid
+	#st=$?
+	#echo "$(date) :: Job $jxy_jid run $nrun start from traj $traj with process $pid coreprocessor finished and returned $st"
+	return 0
+}
+
+gcd-sys-alloc(){	# Find available blocks and boot them, populate array gcd__SYS_BOOTBLOCK gcd__SYS_BOOTPID gcd_SYS_BOOTEDBLOCK
+	# For gcd_SYS_BLOCKSIZE_DEFAULT, all available blocks are booted simultaneously.
+	# For other block sizes, only boot one block.
+	# arg: BLOCKSIZE
+	local -i n
+	for((n=0;n<${#gcd__SYS_BOOTPID[@]};++n));do if((gcd__SYS_BOOTPID[n]>0));then
+		gcd-critical "Boot $n of ${gcd__SYS_BOOTBLOCK[$n]} not waited in sys-alloc"
+		gcd-sys-alloc-wait $n
+	fi;done
+	gcd_SYS_BOOTEDBLOCK=''
+	gcd__SYS_BOOTPID=()
+	gcd-critical GetBlocks gcd-lock "$gcd_SYS_LOCK" gcd-capture -a gcd__SYS_BOOTBLOCK get-bootable-blocks --size $1 $COBALT_PARTNAME
+	local -i st=$?
+	if ((0!=st));then return $st;fi
+	if ((gcd_SYS_BLOCKSIZE_DEFAULT!=$1));then gcd__SYS_BOOTBLOCK=(${gcd__SYS_BOOTBLOCK[0]});fi
+	for((n=0;n<${#gcd__SYS_BOOTBLOCK[@]};++n));do gcd-critical 'Boot' boot-block --block ${gcd__SYS_BOOTBLOCK[$n]}&gcd__SYS_BOOTPID+=($!);done
+	return 0
+}
+gcd-sys-alloc-wait(){	# Wait for unfinished async allocations, changes gcd__SYS_BOOTPID gcd_SYS_BOOTEDBLOCK
+	# args: [N]	# the serial number
+	if((0==$#));then
+		local -i n
+		for((n=0;n<${#gcd__SYS_BOOTPID[@]};++n));do if((gcd__SYS_BOOTPID[n]>0));then break;fi;done
+	else
+		local -ir n=$1
+	fi
+	if((n<0 || n>=${#gcd__SYS_BOOTPID[@]}));then
+		return 1
+	elif((gcd__SYS_BOOTPID[n]>0));then
+		gcd-critical WaitBoot wait ${gcd__SYS_BOOTPID[$n]}
+		local -ir st=$?
+		((gcd__SYS_BOOTPID[n]=-gcd__SYS_BOOTPID[n]))
+		gcd_SYS_BOOTEDBLOCK=${gcd__SYS_BOOTBLOCK[$n]}
+		return $st
+	else gcd-critical "Boot $n of ${gcd__SYS_BOOTBLOCK[$n]} already waited"
+	fi
+}
+gcd-sys-free(){ gcd-critical Free gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --free;}
+gcd-sys-reboot(){ gcd-critical Boot gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --reboot;}
+
+gcd-sys-run-job(){
+	# args: OUTFN ERRFN CMD ...
+	runjob --block $BLOCK -p $rank_per_node --np $((block_size*rank_per_node)) --verbose=INFO \
+		--envs $gcd_SYS_RUNENV OMP_NUM_THREADS=$omp_nthreads BG_COREDUMPPATH=./core/$COBALT_JOBID.$gcd_JID/ \
+		: "${@:3}" >"$1" 2>"$2"
+}

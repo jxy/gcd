@@ -1,0 +1,7 @@
+[[ -d out ]] || mkdir out
+rank_per_node=32
+omp_nthreads=2
+update_time=1200
+run=("$gcd_SCRIPTDIR/testjob" "$JOBPATH" "$JOBID" "$SIZE" "$BLOCK")
+output_path="out/$JOBID.stdout"
+error_path="out/$JOBID.stderr"

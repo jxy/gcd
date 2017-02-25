@@ -1,0 +1,71 @@
+#!/bin/bash
+# Universal job scripts.
+# For testing scripts on mira
+set -u
+
+declare -r COBALT_JOBID="$1"
+declare -ir COBALT_JOBSIZE=$2
+declare -r COBALT_PARTNAME="$3"
+declare -ir COBALT_ENDTIME=$4
+shift 4
+
+declare -i test_boot_available=$COBALT_JOBSIZE
+declare -ai test_boot_sizes=()
+declare -ai test_boot_sizes_n
+get-bootable-blocks(){
+	gcd-log "get-bootable-blocks $*" >&2
+	local -i s
+	while(($#>0));do case $1 in
+		--size)s=$2;shift 2;;
+		--*)echo "Testing '$1' not supported" >&2;exit 1;;
+		*)shift;;
+	esac;done
+	((test_boot_available<s)) && return 1
+	local -i n i j
+	((n=test_boot_available/s))
+	for((i=0;i<${#test_boot_sizes[@]};++i));do ((test_boot_sizes[i]==s))&&break;done
+	local b
+	if((i==${#test_boot_sizes[@]}));then
+		test_boot_sizes[i]=s
+		test_boot_sizes_n[i]=0
+		for((j=0;j<n;++j));do b+=" $s-$j";done
+	else
+		for((j=test_boot_sizes_n[i];j<n+test_boot_sizes_n[i];++j));do b+=" b$s-$j";done
+	fi
+	echo $b
+}
+boot-block(){
+	gcd-log "boot-block $*"
+	local b o=b
+	while(($#>0));do case $1 in
+		--block)b="$2";shift 2;;
+		--free)o=f;shift;;
+		--reboot)o=r;shift;;
+		*)echo "Testing '$1' not supported" >&2;exit 1;;
+	esac;done
+	local -i i s=${b%-*}
+	case $o in
+		b)
+			for((i=0;i<${#test_boot_sizes[@]};++i));do if((test_boot_sizes[i]==i));then
+				((++test_boot_sizes_n[i]));break
+			fi;done
+			((test_boot_available-=s));;
+		f)((test_boot_available+=s));;
+	esac
+	return 0
+}
+runjob(){
+	gcd-info "runjob $*"
+	gcd-log "runjob" declare -p >&2
+	sleep $((4+RANDOM%3))
+	gcd-info "DONE runjob $*"
+}
+
+source ../gcd
+
+gcd_HEALTH_CHECK_WAIT=0.2
+gcd_MANAGE_CHECK_WAIT=0.2
+gcd_TIME_LIMIT_GRACE=10
+gcd_UPDATE_TIME_GRACE=5
+
+gcd-manage "$@"

@@ -1,0 +1,16 @@
+#!/bin/bash
+# clean up after test
+rm -f ../work/FAIL
+rm -f ../work/.*lock*
+rm -rf ../work/.f*
+rm -rf ../jobs/*/run/*
+
+irm(){	# interactive deletion
+	{ echo '### OUTPUT FILES ###';find "$@";} | more
+	local r
+	read -n1 -p 'Deleting output files? [y/N] ' r;echo
+	if [[ $r == y ]];then find "$@" -delete;fi
+}
+
+irm ../jobs/*/out -type f
+irm ../work -type f

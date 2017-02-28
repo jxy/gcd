@@ -13,22 +13,11 @@ DESCRIPTION
 	`gcd-status'.
 
 FUNCTIONS
-	gcd-status [JOBPATH ...] [TIMELIMIT] [CATEGORY ...]
+	gcd-status [JOBPATH ...] [CATEGORY ...]
 		Generates a report of job status within the specified
-		TIMELIMIT, JOBPATH(s), and CATEGORY(ies).  Any arguments
+		JOBPATH(s), and CATEGORY(ies).  Any arguments
 		exists under directory `jobs' is considered a JOBPATH.
-		Failing that, any integer is considered a TIMELIMIT.
-		The rest of the arguments are CATEGORY(ies).
-
-	gcd-fetch BLOCKSIZE TIMELIMIT [CATEGORY ...]
-		BLOCKSIZE is the number of nodes.  TIMELIMIT is
-		in seconds.  Accepts multiple CATEGORYs.  It prints
-		the path to an available job, JOBPATH, and a unique
-		job id of that job path, JOBID, separated by `::'.
-		It sets JOBPATH, JOBID.
-
-	gcd-return RETURNCODE
-		Register the RETURNCODE of a job for the JOBID from JOBPATH.
+		Other arguments are CATEGORY(ies).
 
 FILES
 	util/*
@@ -110,8 +99,9 @@ FILES UNDER JOBPATH
 		it uses twice of the previous max update_time plus
 		5 minutes or the time_limit, whichever is smaller.
 		It can define additional variables that overwrites
-		those defined in PROP.  It can use variables given from
-		the executing environment: JOBPATH, JOBID, SIZE, BLOCK.
+		those defined in PROP.  It can use variables
+		given from the executing environment: gcd_JOBPATH,
+		gcd_JOBID, gcd_JOBSIZE, gcd_JOBBLOCK.
 
 	run/$JOBID.served
 		This file is created when `fetch' serves this JOBID,

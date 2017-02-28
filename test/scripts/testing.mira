@@ -10,10 +10,30 @@ declare -ir COBALT_ENDTIME=$4
 shift 4
 
 declare -i test_boot_available=$COBALT_JOBSIZE
-declare -ai test_boot_sizes=()
-declare -ai test_boot_sizes_n
+declare -ai test_boot_sizes test_boot_sizes_n test_free_sizes_n
+test-part-save(){
+	local -i i
+	for((i=0;i<${#test_boot_sizes[@]};++i));do
+		echo ${test_boot_sizes[i]} ${test_boot_sizes_n[i]} ${test_free_sizes_n[i]}
+	done>"$testing_state"
+}
+test-part-load(){
+	test_boot_available=$COBALT_JOBSIZE
+	test_boot_sizes=()
+	test_boot_sizes_n=()
+	test_free_sizes_n=()
+	[[ -s $testing_state ]] || return
+	local -i i=0 s n f
+	while read s n f;do
+		test_boot_sizes[i]=$s
+		test_boot_sizes_n[i]=$n
+		test_free_sizes_n[i]=$f
+		((test_boot_available-=s*(n-f)))
+	done<"$testing_state"
+}
 get-bootable-blocks(){
-	gcd-log "get-bootable-blocks $*" >&2
+	gcd-log 1 "get-bootable-blocks $*" >&2
+	test-part-load
 	local -i s
 	while(($#>0));do case $1 in
 		--size)s=$2;shift 2;;
@@ -28,14 +48,18 @@ get-bootable-blocks(){
 	if((i==${#test_boot_sizes[@]}));then
 		test_boot_sizes[i]=s
 		test_boot_sizes_n[i]=0
+		test_free_sizes_n[i]=0
 		for((j=0;j<n;++j));do b+=" $s-$j";done
 	else
-		for((j=test_boot_sizes_n[i];j<n+test_boot_sizes_n[i];++j));do b+=" b$s-$j";done
+		for((j=test_boot_sizes_n[i];j<n+test_boot_sizes_n[i];++j));do b+=" $s-$j";done
 	fi
+	gcd-log 1 "bootable-blocks $b" >&2
 	echo $b
+	test-part-save
 }
 boot-block(){
-	gcd-log "boot-block $*"
+	gcd-log 1 "boot-block $*"
+	test-part-load
 	local b o=b
 	while(($#>0));do case $1 in
 		--block)b="$2";shift 2;;
@@ -46,26 +70,32 @@ boot-block(){
 	local -i i s=${b%-*}
 	case $o in
 		b)
-			for((i=0;i<${#test_boot_sizes[@]};++i));do if((test_boot_sizes[i]==i));then
+			for((i=0;i<${#test_boot_sizes[@]};++i));do if((test_boot_sizes[i]==s));then
 				((++test_boot_sizes_n[i]));break
-			fi;done
-			((test_boot_available-=s));;
-		f)((test_boot_available+=s));;
+			fi;done;;
+		f)
+			for((i=0;i<${#test_boot_sizes[@]};++i));do if((test_boot_sizes[i]==s));then
+				((++test_free_sizes_n[i]));break
+			fi;done;;
 	esac
-	return 0
+	test-part-save
 }
 runjob(){
 	gcd-info "runjob $*"
-	gcd-log "runjob" declare -p >&2
-	sleep $((4+RANDOM%3))
+	gcd-log 1 "runjob" declare -p >&2
+	sleep $((4+RANDOM%4))
 	gcd-info "DONE runjob $*"
 }
 
-source ../gcd
+source ../gcd "$@"
+
+declare -r testing_state="$gcd_WORKDIR/testing.$COBALT_JOBID.state"
+rm -f "$testing_state"
 
 gcd_HEALTH_CHECK_WAIT=0.2
 gcd_MANAGE_CHECK_WAIT=0.2
 gcd_TIME_LIMIT_GRACE=10
 gcd_UPDATE_TIME_GRACE=5
+#gcd_VERBOSITY=2
 
-gcd-manage "$@"
+gcd-manage

@@ -5,8 +5,8 @@ update_time=1200
 local -i n=0
 local f="$(ls -1 out|grep 'stdout$'|sort|tail -n1)"
 local r='.*\.0*([0-9]*).stdout'
-if [[ $f =~ $r ]];then n=${BASH_REMATCH[1]};fi
-run=("$gcd_SCRIPTDIR/testjob" "$JOBPATH" "$JOBID" "$SIZE" "$BLOCK" "$n")
-output_path="$(printf "out/$JOBID.%05d.stdout" $n)"
-error_path="$(printf "out/$JOBID.%05d.stderr" $n)"
+if [[ $f =~ $r ]];then n=${BASH_REMATCH[1]};n+=1;fi
+run=("$gcd_SCRIPTDIR/testjob" "$gcd_JOBPATH" "$gcd_JOBID" "$gcd_JOBSIZE" "$gcd_JOBBLOCK" "$n")
+output_path="$(printf "out/$gcd_JOBID.%05d.stdout" $n)"
+error_path="$(printf "out/$gcd_JOBID.%05d.stderr" $n)"
 unset n f r

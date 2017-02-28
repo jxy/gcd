@@ -37,19 +37,21 @@ gcd-sys-diagnosis(){	# do some diagnosis of the job
 gcd-sys-alloc(){	# Find available blocks and boot them, populate array gcd__SYS_BOOTBLOCK gcd__SYS_BOOTPID gcd_SYS_BOOTEDBLOCK
 	# For gcd_SYS_BLOCKSIZE_DEFAULT, all available blocks are booted simultaneously.
 	# For other block sizes, only boot one block.
+	# If unwaited blocks exist and their sizes are equal to gcd_SYS_BLOCKSIZE_DEFAULT, return without error.
 	# arg: BLOCKSIZE
 	local -i n
 	for((n=0;n<${#gcd__SYS_BOOTPID[@]};++n));do if((gcd__SYS_BOOTPID[n]>0));then
-		gcd-critical "Boot $n of ${gcd__SYS_BOOTBLOCK[$n]} not waited in sys-alloc"
+		if((gcd_SYS_BLOCKSIZE_DEFAULT==$1));then return 0;fi
+		gcd-critical 0 "Boot $n of ${gcd__SYS_BOOTBLOCK[$n]} not waited in sys-alloc"
 		gcd-sys-alloc-wait $n
 	fi;done
 	gcd_SYS_BOOTEDBLOCK=''
 	gcd__SYS_BOOTPID=()
-	gcd-critical GetBlocks gcd-lock "$gcd_SYS_LOCK" gcd-capture -a gcd__SYS_BOOTBLOCK get-bootable-blocks --size $1 $COBALT_PARTNAME
+	gcd-critical 2 GetBlocks gcd-lock "$gcd_SYS_LOCK" gcd-capture -a gcd__SYS_BOOTBLOCK get-bootable-blocks --size $1 $COBALT_PARTNAME
 	local -i st=$?
 	if ((0!=st));then return $st;fi
 	if ((gcd_SYS_BLOCKSIZE_DEFAULT!=$1));then gcd__SYS_BOOTBLOCK=(${gcd__SYS_BOOTBLOCK[0]});fi
-	for((n=0;n<${#gcd__SYS_BOOTBLOCK[@]};++n));do gcd-critical 'Boot' boot-block --block ${gcd__SYS_BOOTBLOCK[$n]}&gcd__SYS_BOOTPID+=($!);done
+	for((n=0;n<${#gcd__SYS_BOOTBLOCK[@]};++n));do gcd-critical 0 'Boot' boot-block --block ${gcd__SYS_BOOTBLOCK[$n]}&gcd__SYS_BOOTPID+=($!);done
 	return 0
 }
 gcd-sys-alloc-wait(){	# Wait for unfinished async allocations, changes gcd__SYS_BOOTPID gcd_SYS_BOOTEDBLOCK
@@ -63,20 +65,23 @@ gcd-sys-alloc-wait(){	# Wait for unfinished async allocations, changes gcd__SYS_
 	if((n<0 || n>=${#gcd__SYS_BOOTPID[@]}));then
 		return 1
 	elif((gcd__SYS_BOOTPID[n]>0));then
-		gcd-critical WaitBoot wait ${gcd__SYS_BOOTPID[$n]}
+		gcd-critical 1 WaitBoot wait ${gcd__SYS_BOOTPID[$n]}
 		local -ir st=$?
 		((gcd__SYS_BOOTPID[n]=-gcd__SYS_BOOTPID[n]))
 		gcd_SYS_BOOTEDBLOCK=${gcd__SYS_BOOTBLOCK[$n]}
 		return $st
-	else gcd-critical "Boot $n of ${gcd__SYS_BOOTBLOCK[$n]} already waited"
+	else gcd-critical 0 "Boot $n of ${gcd__SYS_BOOTBLOCK[$n]} already waited"
 	fi
 }
-gcd-sys-free(){ gcd-critical Free gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --free;}
-gcd-sys-reboot(){ gcd-critical Boot gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --reboot;}
+gcd-sys-free(){ gcd-critical 0 Free gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --free;}
+gcd-sys-reboot(){ gcd-critical 0 Reboot gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --reboot;}
 
 gcd-sys-run-job(){
 	# args: OUTFN ERRFN CMD ...
-	runjob --block $BLOCK -p $rank_per_node --np $((block_size*rank_per_node)) --verbose=INFO \
+	gcd-log 0 "EXEC: runjob --block $gcd_JOBBLOCK -p $rank_per_node --np $((block_size*rank_per_node)) --verbose=INFO
+		--envs $gcd_SYS_RUNENV OMP_NUM_THREADS=$omp_nthreads BG_COREDUMPPATH=./core/$COBALT_JOBID.$gcd_JID/
+		: ${*:3} >$1 2>$2"
+	runjob --block $gcd_JOBBLOCK -p $rank_per_node --np $((block_size*rank_per_node)) --verbose=INFO \
 		--envs $gcd_SYS_RUNENV OMP_NUM_THREADS=$omp_nthreads BG_COREDUMPPATH=./core/$COBALT_JOBID.$gcd_JID/ \
 		: "${@:3}" >"$1" 2>"$2"
 }

@@ -2,6 +2,6 @@
 rank_per_node=32
 omp_nthreads=2
 update_time=1200
-run=("$gcd_SCRIPTDIR/testjob" "$JOBPATH" "$JOBID" "$SIZE" "$BLOCK")
-output_path="out/$JOBID.stdout"
-error_path="out/$JOBID.stderr"
+run=("$gcd_SCRIPTDIR/testjob" "$gcd_JOBPATH" "$gcd_JOBID" "$gcd_JOBSIZE" "$gcd_JOBBLOCK")
+output_path="out/$gcd_JOBID.stdout"
+error_path="out/$gcd_JOBID.stderr"

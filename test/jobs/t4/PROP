@@ -1,4 +1,4 @@
-block_size=8196
+block_size=8192
 time_limit=10
 repeat=1
 category="HMC"

@@ -101,7 +101,7 @@ gcd-sys-submit(){
 gcd-sys-submit-self(){
 	local p t n a
 	read p t n a < <(qstat --header=Project:WallTime:Nodes:Args $COBALT_JOBID|tail -n1)
-	echo "/usr/bin/qsub -A '$p' -t '$t' -n $n --mode script --disable_preboot '$gcd_JOBSCRIPT' $a" | at now+10min
+	echo "/usr/bin/qsub -A '$p' -t '$t' -n $n --mode script --disable_preboot '$gcd_JOBSCRIPT' $a >>log.$(whoami) 2>&1" | at now+10min
 }
 
 declare -a gcd_SYS_MANAGED_J=() gcd_SYS_MANAGED_P=() gcd_SYS_MANAGED_C=() gcd_SYS_MANAGED_A=()

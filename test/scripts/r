@@ -1,0 +1,23 @@
+#!/bin/bash
+# Universal job scripts.
+# For testing scripts on mira
+set -u
+
+declare -r COBALT_JOBID="$1"
+declare -ir COBALT_JOBSIZE=$2
+declare -r COBALT_PARTNAME="$3"
+declare -ir COBALT_ENDTIME=$4
+shift 4
+
+source ../gcd "$@"
+
+declare -r testing_state="$gcd_WORKDIR/testing.$COBALT_JOBID.state"
+rm -f "$testing_state"
+
+gcd_HEALTH_CHECK_WAIT=0.02
+gcd_MANAGE_CHECK_WAIT=0.02
+gcd_TIME_LIMIT_GRACE=10
+gcd_UPDATE_TIME_GRACE=5
+#gcd_VERBOSITY=2
+
+gcd-manage

@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -u
 
 if [[ $BASH_SOURCE == $0 ]]; then
@@ -10,22 +9,37 @@ fi
 
 if [[ -z ${GCD+X} ]];then declare -r GCD="$(cd "$(dirname "$BASH_SOURCE")";pwd)";fi
 
+declare -r gcd_VERSION="gcd (Grand Central Dispatch) 1.0"
+
 declare -r gcd_WORKDIR="$GCD/work"
 declare -r gcd_JOBDIR="$GCD/jobs"
 declare -r gcd_SCRIPTDIR="$GCD/scripts"
-declare -r gcd_UTILDIR="../util"	# keep utildir relative to workdir
 
 cd "$gcd_WORKDIR"	# chdir to work
+
+# Relative paths for those only used in the main process that runs under gcd_WORKDIR
+declare -r gcd_UTILDIR="../util"
+declare -r gcd_CONF="../conf"
+declare gcd_JOBSCRIPT="../scripts/r"
+
+declare -ir gcd_BEGIN=$(date +%s)
 
 declare -i gcd_VERBOSITY=1	# verbosity 0: failure only, 1: important info, 2: everything
 
 # default to mira for now
-if((1==gcd_SOURCED));then source "$gcd_UTILDIR/mira";fi
+source "$gcd_UTILDIR/mira"
+if [[ -s ../scripts/testing.mira ]];then
+	echo '### TESTING MODE ###'
+	source ../scripts/testing.mira
+fi
 
-declare -r gcd_FAILURE="$gcd_WORKDIR/FAIL"
+declare -a gcd_CONF_PLAN
+source "$gcd_CONF"
+
+declare -r gcd_CRITICAL="$gcd_WORKDIR/CRITICAL"
 declare -r gcd_LOCK="$gcd_WORKDIR/.lock"	# lock for updating states
 
-declare gcd_HEALTH_CHECK_WAIT=300
+declare gcd_HEALTH_CHECK_WAIT=11
 declare gcd_MANAGE_CHECK_WAIT=3
 
 declare -i gcd_TIME_LIMIT_GRACE=1200
@@ -54,11 +68,12 @@ declare -ai gcd_JOBS_available gcd_JOBS_running gcd_JOBS_stop	# number of jobs i
 
 declare -a gcd_EXIT_TRAP
 declare gcd_LOG_TAG
+declare -i gcd_PROC_LVL=0
 
 declare -r gcd_JOBID_RE='^[^ 	#]+$'
 
-#declare -ar gcd_LOG_FUNCS=(gcd-caller gcd-info gcd-prefix-date gcd-prefix gcd-log-prefix gcd-critical-prefix gcd-log gcd-critical gcd-exit-trap gcd-exit-announce gcd-sig)
 declare -ar gcd_LOG_FUNCS=(gcd-caller gcd-info gcd-log gcd-critical gcd-exit-trap gcd-exit-announce gcd-sig)
+
 gcd-caller(){	# Information of the caller without the logging facility
 	local -i n
 	local f
@@ -66,53 +81,19 @@ gcd-caller(){	# Information of the caller without the logging facility
 		for f in ${gcd_LOG_FUNCS[@]};do if [[ $f == ${FUNCNAME[$n]} ]];then continue 2;fi;done
 		break;
 	done
-	#if((${#FUNCNAME[@]}==n));then caller;else caller $n;fi
-	caller $((n-1))
+	# Similar to calling: caller $((n-1))
+	printf '%-20s %-20s\n' "${BASH_SOURCE[n]}:${BASH_LINENO[n-1]}" "${FUNCNAME[n]}"
 }
 gcd-info(){
-	if((2>$#));then printf '%X [%3d %-22s %-20s \t%-40s \t%s\n' $(date +%s) $(gcd-caller)']' "<$gcd_LOG_TAG>" "$1"
-	else printf '%X [%3d %-22s %-20s \t%-40s \t%s\n' $(date +%s) $(gcd-caller)']' "<$gcd_LOG_TAG:$1>" "${*:2}";fi
+	if((gcd_PROC_LVL>1));then local -ar p=(printf '%X %s \t%-90s \t%s\n' $(date +%s) "$(gcd-caller)")
+	else local -ar p=(printf '%X %s \t%-35s \t%s\n' $(date +%s) "$(gcd-caller)")
+	fi
+	if((2>$#));then "${p[@]}" "<$gcd_LOG_TAG>" "$1";else "${p[@]}" "<$gcd_LOG_TAG:$1>" "${*:2}";fi
 }
-# gcd-prefix-date(){
-# 	local l
-# 	if [[ -z ${gcd_IN_PREFIX+X} ]];then
-# 		while read l;do gcd-info "<$*> $l";done
-# 	else
-# 		while read l;do printf "<$gcd_LOG_TAG> [%s] %s\n" "$*" "$l";done
-# 	fi
-# }
-# gcd-prefix_(){
-# 	local -r o="$d/o" e="$d/e"
-# 	mkfifo "$o"
-# 	mkfifo "$e"
-# 	local -ai pid
-# 	gcd-prefix-date "O $1" <&- <"$o" &
-# 	pid+=($!)
-# 	gcd-prefix-date "E $1" <&- <"$e" 1>&2 &
-# 	pid+=($!)
-# 	local -ir gcd_IN_PREFIX=1
-# 	"${@:2}" >"$o" 2>"$e"
-# 	local -ri st=$?
-# 	#echo "waiting ${pid[@]}"
-# 	wait ${pid[@]}
-# 	#echo "removing $d"
-# 	rm -r "$d" || echo "'$*' remove $d failed"
-# 	#echo "returning from gcd-prefix_"
-# 	return $st
-# }
-# gcd-prefix(){	# prefix both stdout and stdin of command with gcd-prefix-date and a label
-# 	# args: PREFIX CMD ...
-# 	# WARNING: if CMD spawns child process that lives longer than CMD,
-# 	# the child process would need the fifo that I would delete when I returns.
-# 	#echo "mktemp:"
-# 	local -r d="$(while ! mktemp -q -d "$gcd_WORKDIR/.fXXXXXXXXXX";do true;done)"
-# 	#echo "mktemp got $d"
-# 	gcd-with-exit-trap 3 rm -rf "$d" gcd-prefix_ "$@"
-# }
-# gcd-prefix-str(){ gcd-prefix "$1" printf '%s\n' "${@:2}";}
 
 gcd-process-init(){	# initialize at the beginning of any useful subprocess
 	# args: TAG
+	gcd_PROC_LVL+=1
 	if [[ -z ${gcd_LOG_TAG:+X} ]];then gcd_LOG_TAG="$1";else gcd_LOG_TAG+=":$1";fi
 	gcd-set-trap
 }
@@ -127,7 +108,16 @@ gcd-set-trap(){	# need to run in any subprocess that needs cleanup
 	trap "gcd-sig 15" 15
 }
 gcd-sig(){ gcd-info Sig "Got signal $1";exit;}>&2
-gcd-exit-announce(){ ((2<=gcd_VERBOSITY))&&gcd-info Exit "Exiting...";}>&2
+gcd-exit-announce(){
+	local -ir t=$(($(date +%s)-gcd_BEGIN))
+	if((1<=gcd_VERBOSITY));then
+		if [[ -z ${gcd_SYS_SIZE+X} ]];then
+			gcd-info Exit "Ran DURATION $t seconds, exiting..."
+		else
+			gcd-info Exit "Ran DURATION $t seconds, $((t*gcd_SYS_SIZE)) node-seconds, exiting..."
+		fi
+	fi
+}>&2
 gcd-exit-trap(){
 	if((0==${#gcd_EXIT_TRAP[@]}));then return;fi
 	#{ printf "$(date) <$gcd_LOG_TAG> TRAP:";printf " '%s'" "${gcd_EXIT_TRAP[@]}";printf '\n';}>&2
@@ -159,20 +149,6 @@ gcd-with-exit-trap(){	# Run cmd with additional exit trap
 }
 
 gcd-call-info(){ echo "dir: '$(pwd)'";echo "call trace:";local -i n;for((n=0;;++n));do caller $n||break;done|nl;}
-# gcd-log-prefix(){	# Log info, child process would inherit redirections.
-# 	# args: [LABEL [CMD [...]]]
-# 	if((0==$#));then gcd-prefix "Call stack $$" gcd-call-info
-# 	elif((1==$#));then gcd-prefix-str LOG "$1"
-# 	else
-# 		local -r s="$1";shift
-# 		local -ir t=$(date +%s)
-# 		gcd-prefix-str "$s" "Starting $*"
-# 		gcd-prefix "$s" "$@"
-# 		local -ir st=$?
-# 		gcd-prefix-str "$s" "Ended with return code $st, took $(($(date +%s)-t)) seconds"
-# 		return $st
-# 	fi
-# }
 gcd-log(){	# Log info, no redirection
 	# args: VERBOSITY [LABEL [CMD [...]]]
 	local -i v=$1;shift
@@ -184,33 +160,23 @@ gcd-log(){	# Log info, no redirection
 		((v<=gcd_VERBOSITY))&&gcd-info "Starting ${*:2}"
 		"${@:2}"
 		local -ir st=$?
-		((v<=gcd_VERBOSITY))&&gcd-info "Ended with return code $st, took $(($(date +%s)-t)) seconds"
+		((v<=gcd_VERBOSITY))&&gcd-info "Returned $st, took $(($(date +%s)-t)) seconds"
 		return $st
 	fi
 }
-# gcd-critical-prefix(){	# Same as gcd-log-prefix, but save info in gcd_FAILURE file
-# 	# Output and save the message when giving no CMD.
-# 	# When given CMD, only save failed CMD info in gcd_FAILURE.
-# 	if((2>$#));then gcd-prefix-str CRITICAL "$@" | tee -a $gcd_FAILURE
-# 	else
-# 		gcd-log "$@"
-# 		local -ir st=$?
-# 		if((0!=st));then gcd-prefix-str "$1" "'${*:2}' failed, returned $st" >>$gcd_FAILURE;fi
-# 		return $st
-# 	fi
-# }
-gcd-critical(){	# Same as gcd-log, but save info in gcd_FAILURE file
+gcd-critical(){	# Same as gcd-log, but save info in gcd_CRITICAL file
 	# Output and save the message when giving no CMD.
-	# When given CMD, only save failed CMD info in gcd_FAILURE.
+	# When given CMD, only save failed CMD info in gcd_CRITICAL.
 	local -i v=$1;shift
-	if((2>$# && v<=gcd_VERBOSITY));then gcd-info "$*" | tee -a $gcd_FAILURE
+	if((2>$# && v<=gcd_VERBOSITY));then gcd-info "$*" | tee -a $gcd_CRITICAL
 	else
 		gcd-log $v "$@"
 		local -ir st=$?
-		if((0!=st));then gcd-info "$1" "cmd:$(printf " '%s'" "${@:2}") failed, returned $st" >>$gcd_FAILURE;fi
+		if((0!=st));then gcd-info "$1" "cmd:$(printf " '%s'" "${@:2}") failed, returned $st" >>$gcd_CRITICAL;fi
 		return $st
 	fi
 }
+gcd-abspath(){ perl -e 'use Cwd "abs_path";print abs_path(shift)' "$1";}
 
 gcd-get-jobs-count(){	# Count jobs, should be called following gcd-get-jobs-prop
 	local -i i
@@ -244,7 +210,8 @@ gcd-get-jobs-prop(){	# Reads PROP under each JOBPATH
 	for p in "$gcd_JOBDIR"/*;do
 		[[ -s $p/PROP && -s $p/LIST && -s $p/JOB ]] || continue
 		gcd_JOBS_PT[n]="$p"
-		source "$p/PROP"
+		gcd-critical 2 GetProp source "$p/PROP"
+		if((0>=time_limit));then time_limit=$(gcd-guess-time-limit "$p");fi
 		gcd_JOBS_BS[n]=$block_size
 		gcd_JOBS_TL[n]=$time_limit
 		gcd_JOBS_RP[n]=$repeat
@@ -316,15 +283,49 @@ gcd-word-in-str(){	# Test if word is in the string
 }
 
 gcd-status_(){	# Populates gcd_BLOCKSIZE gcd_NBLOCK_MAX if sourced
-	local -i st
-	gcd-critical 2 GetJobProp gcd-get-jobs-prop;st=$?;if((0!=st));then return $st;fi
-	gcd-critical 2 GetJobCount gcd-get-jobs-count;st=$?;if((0!=st));then return $st;fi
+	gcd-critical 2 GetJobProp gcd-get-jobs-prop || return
+	gcd-critical 2 GetJobCount gcd-get-jobs-count || return
 	local -i i
+	echo '## List of jobs ##'
 	local -r fmt='%5s %9s %6s %20s %9s %7s %6s %s\n'
 	printf "$fmt" '#Size' TimeLimit Repeat Path Available Running Stop Category
 	for i in ${gcd_JOBS_IX[@]};do
 		printf "$fmt" ${gcd_JOBS_BS[i]} ${gcd_JOBS_TL[i]} ${gcd_JOBS_RP[i]} "$(basename "${gcd_JOBS_PT[i]}")" ${gcd_JOBS_available[i]} ${gcd_JOBS_running[i]} ${gcd_JOBS_stop[i]} "${gcd_JOBS_CG[i]}"
 	done
+	local -i m=0
+	for((i=1;i<${#gcd_CONF_PLAN[@]};i+=5));do((m<gcd_CONF_PLAN[i]))&&((m=gcd_CONF_PLAN[i]));done
+	for i in ${gcd_JOBS_IX[@]};do
+		if((m<gcd_JOBS_BS[i]));then
+			echo "WARNING: Jobs under ${gcd_JOBS_PT[i]} has size ${gcd_JOBS_BS[i]} larger than configured in gcd_CONF_PLAN: $m"
+		fi
+	done
+	local -r jfmt='%6d nodes %5d minutes %32s extra args: %s\n'
+	gcd-sys-get-managed
+	echo '## Current jobs ##'
+	for((i=0;i<${#gcd_SYS_MANAGED_N[@]};++i));do
+		printf "$jfmt" ${gcd_SYS_MANAGED_N[i]} $((gcd_SYS_MANAGED_T[i]/60)) "${gcd_SYS_MANAGED_P[i]}" "${gcd_SYS_MANAGED_A[i]}"
+	done
+	local -i avail=0 avail_rp=0 inqueue=0
+	for i in ${gcd_JOBS_IX[@]};do
+		if((0==gcd_JOBS_RP[i]));then((avail+=gcd_JOBS_BS[i]*gcd_JOBS_TL[i]*gcd_JOBS_available[i]))
+		else((avail_rp+=gcd_JOBS_BS[i]*gcd_JOBS_TL[i]*gcd_JOBS_available[i]))
+		fi
+	done
+	for((i=0;i<${#gcd_SYS_MANAGED_T[@]};++i));do((inqueue+=gcd_SYS_MANAGED_T[i]*gcd_SYS_MANAGED_N[i]));done
+	local -r tfmt='%-40s : %19d node-seconds %12d Knode-day\n'
+	printf "$tfmt" "total available non-repeatable jobs" $avail $((avail/(1024*24*3600)))
+	printf "$tfmt" "total available repeatable jobs" $avail_rp$((avail_rp/(1024*24*3600)))
+	printf "$tfmt" "total submitted jobs" $inqueue $((inqueue/(1024*24*3600)))
+	read -n 1 -s -p '## Submitting according to conf? [y/N]';echo;if [[ $REPLY == [yY] ]];then
+		local -i njob=0
+		for((i=0;i<${#gcd_CONF_PLAN[@]};i+=5));do
+			printf "* submitting $jfmt" "${gcd_CONF_PLAN[@]:i+1:4}"
+			for((njob=0;njob<gcd_CONF_PLAN[i];++njob));do
+				gcd-log 2 Submit gcd-sys-submit "${gcd_CONF_PLAN[i+3]}" ${gcd_CONF_PLAN[i+2]} ${gcd_CONF_PLAN[i+1]} "$gcd_JOBSCRIPT" "${gcd_CONF_PLAN[i+4]}" || break
+			done
+			echo "* $njob jobs submitted"
+		done
+	fi
 }
 gcd-status(){ gcd-critical 2 Status gcd-status_;}
 
@@ -380,13 +381,13 @@ gcd-return(){	# Returns job running status
 	local -r p="$2"
 	local -r d="$3"
 	local -i n=$(date +%s)
-	if((0==st));then gcd-log 0 "Job $(gcd-job-string) finished and returned $st, total TIME SPAN $((n-gcd_SERVED_TIME)) seconds" | tee -a "$p/run/$d.log"
+	if((0==st));then gcd-log 0 "Returned $st, TIME SPAN $((n-gcd_SERVED_TIME)) seconds since served, $((n-gcd_JBEGIN[gcd_JID])) seconds actual, cost $((gcd_JSIZES[gcd_JID]*(n-gcd_JBEGIN[gcd_JID]))) node-seconds" | tee -a "$p/run/$d.log"
 	else gcd-critical 0 "Failed with code $st" | tee -a "$p/run/$d.log"
 	fi
-	local -i i
-	for((i=0;i<${#gcd_JOBS_PT[@]};++i));do [[ ${gcd_JOBS_PT[i]} == $p ]] && break;done
 	# touches 'stop' before removing 'served', avoid race conditions with gcd-fetch_,
 	# which checks 'served' before 'stop'.
+	local -i i
+	for((i=0;i<${#gcd_JOBS_PT[@]};++i));do [[ ${gcd_JOBS_PT[i]} == $p ]] && break;done
 	if((0==$1 && 0==gcd_JOBS_RP[i]));then gcd-log 0 "Job $(gcd-job-string) stops" |tee -a "$p/run/$d.stop";fi
 	rm "$p/run/$d.served"
 	return $1
@@ -421,20 +422,18 @@ gcd-check-health(){   # assuming output file exists and ready to be checked
 	local -ir tl=$2	# time limit
 	local -r fn="$3"	# file name to check for status
 	if kill -0 $pid 2>/dev/null; then	# still running
-		local -i m=$(date -r "$fn" +%s)
-		local -i n=$(date +%s)
-		if((0==tl));then
-			gcd-log 0 "IDLE TIME $((n-m)) seconds" >>run/$gcd_JOBID.log
-			return 0
-		elif((tl<n-m));then
-			gcd-critical 0 "Job $(gcd-job-string) not updated for $((n-m)) seconds"
+		local -i it=$(($(date +%s)-$(date -r "$fn" +%s)))
+		if((0<tl&&tl<it));then
+			gcd-critical 0 "Not updated for $it seconds"
 			return $gcd_HEALTH_BAD
 		else
-			if((9*tl<10*(n-m)));then gcd-critical 1 "IDLE TIME $((n-m)) seconds approaching limit" | tee -a run/$gcd_JOBID.log;fi
+			((idle_time_max<it)) && idle_time_max=$it
 			return 0
 		fi
 	else
-		gcd-log 0 "Job $(gcd-job-string) died"
+		gcd-log 0 "max IDLE TIME $idle_time_max seconds" | tee -a run/$gcd_JOBID.log
+		if((9*tl<10*idle_time_max));then gcd-critical 1 "IDLE TIME $idle_time_max seconds approaching limit";fi
+		gcd-log 2 "Died"
 		return $gcd_HEALTH_DIED
 	fi
 }
@@ -455,6 +454,7 @@ gcd-care(){	# Check output file timestamp while running a long running job
 	local -r fn="$1";shift
 	"$@" &	
 	local -ir pid=$!
+	local -i idle_time_max=0	# used in gcd-check-health
 	while true; do
 		sleep $gcd_HEALTH_CHECK_WAIT
 		if [[ ! -a $fn ]];then
@@ -475,7 +475,7 @@ gcd-care(){	# Check output file timestamp while running a long running job
 			if ((h==gcd_HEALTH_BAD)); then
 				gcd-log 0 "Had bad health, killed and returned $st"
 			elif ((h==gcd_HEALTH_DIED)); then
-				gcd-log 0 "Had died, returned $st"
+				gcd-log 2 "Had died, returned $st"
 			fi
 			return $st
 		fi
@@ -483,12 +483,16 @@ gcd-care(){	# Check output file timestamp while running a long running job
 }
 
 gcd-guess-time-limit(){	# Guess the time limit from previous runs
-	local -i t=$(find run/ -name '*.log' -exec sed -n '/TIME SPAN/s/^.*TIME SPAN \([0-9]*\) .*$/\1/p' {} \; | sort -nr | head -n1)
+	# args: [JOBPATH]
+	if((0==$#));then local -r p=.;else local -r p="$1";fi
+	local -i t=$(find "$p/run" -name '*.log' -exec sed -n '/TIME SPAN/s/^.*TIME SPAN \([0-9]*\) .*$/\1/p' {} \; | sort -nr | head -n1)
 	if((0<t));then((t=gcd_TIME_LIMIT_GRACE+105*t/100));gcd-critical 0 "Guessed time_limit=$t">&2;fi
 	echo $t
 }
 gcd-guess-update-time(){	# Guess the update time from previous runs
-	local -i t=$(find run/ -name '*.log' -exec sed -n '/IDLE TIME/s/^.*IDLE TIME \([0-9]*\) .*$/\1/p' {} \; | sort -nr | head -n1)
+	# args: [JOBPATH]
+	if((0==$#));then local -r p=.;else local -r p="$1";fi
+	local -i t=$(find "$p/run"  -name '*.log' -exec sed -n '/IDLE TIME/s/^.*IDLE TIME \([0-9]*\) .*$/\1/p' {} \; | sort -nr | head -n1)
 	if((0<t));then((t=gcd_UPDATE_TIME_GRACE+2*t));fi
 	if((time_limit<t && 0<time_limit || 0==t));then t=$time_limit;fi
 	if((0<t));then gcd-critical 0 "Guessed update_time=$t">&2;fi
@@ -497,7 +501,7 @@ gcd-guess-update-time(){	# Guess the update time from previous runs
 
 gcd-job-string(){
 	# args: [INDEX]
-	if((0==$#));then echo "[$gcd_JID:$(basename "$gcd_JOBPATH"):$gcd_JOBID]"
+	if((0==$#));then echo "[$gcd_JID:$(basename "$gcd_JOBPATH"):$gcd_JOBID@$gcd_JOBBLOCK:$gcd_JOBSIZE]"
 	else echo "[$1]"
 	fi
 }
@@ -517,8 +521,8 @@ gcd-run-job_(){	# run-job, assuming under the JOBPATH, changes gcd_JOBRETURN
 	local -a run
 	local output_path error_path
 	gcd-critical 2 sourceJOB source JOB
-	if((0<=time_limit));then time_limit=$(gcd-guess-time-limit);fi
-	if((0<=update_time));then update_time=$(gcd-guess-update-time);fi
+	if((0>=time_limit));then time_limit=$(gcd-guess-time-limit);fi
+	if((0>=update_time));then update_time=$(gcd-guess-update-time);fi
 	gcd_JOBRETURN=$gcd_MISC_ERROR
 	gcd-log 0 Run gcd-care $update_time "$output_path" gcd-sys-run-job "$output_path" "$error_path" "${run[@]}"
 	gcd_JOBRETURN=$?
@@ -528,14 +532,14 @@ gcd-run-job-return(){ gcd-return $gcd_JOBRETURN "$gcd_JOBPATH" "$gcd_JOBID";}
 gcd-run-job(){	# reads gcd_JOBPATH and gcd_JOBID, set gcd_JOBSIZE and gcd_JOBBLOCK
 	# args: JOBSIZE JOBBLOCK
 	# Run in a subprocess.
-	gcd-process-init "$(gcd-job-string)"
 	local -ir gcd_JOBSIZE=$1
 	local -r gcd_JOBBLOCK=$2
+	gcd-process-init "$(gcd-job-string)"
 	local -i gcd_JOBRETURN=$gcd_CANNOT_START
 	gcd-with-exit-trap 1 gcd-run-job-return gcd-run-dir "$gcd_JOBPATH" gcd-run-job_
 }
 
-gcd-launch-job(){	# updates gcd_JID gcd_JPID gcd_JBLOCKS gcd_JSIZES
+gcd-launch-job(){	# updates gcd_JID gcd_JPID gcd_JBLOCKS gcd_JSIZES gcd_JBEGIN gcd_JTIME
 	# args: JOBPATH JOBID SIZE BLOCK
 	local -r gcd_JOBPATH="$1"
 	local -r gcd_JOBID="$2"
@@ -543,7 +547,9 @@ gcd-launch-job(){	# updates gcd_JID gcd_JPID gcd_JBLOCKS gcd_JSIZES
 	local -r b=$4
 	gcd_JSIZES+=($s)
 	gcd_JBLOCKS+=($b)
-	gcd-log 1 RunJob gcd-run-job $s $b &
+	gcd_JBEGIN+=($(date +%s))
+	gcd_JTIME+=(0)
+	gcd-log 2 RunJob gcd-run-job $s $b &
 	gcd_JPID+=($!)
 	gcd_JID+=1
 	return 0
@@ -562,11 +568,11 @@ gcd-launch(){	# Fetch available jobs and launch them with specified size and par
 	local -a gcd_SERVED_JOBPATH=() gcd_SERVED_JOBID=()
 	local -ai gcd_SERVED_SIZE=() gcd_SERVED_STARTED=() gcd_SERVED_IX=()
 	local -i gcd_SERVED_TIME=$(date +%s)
-	if((0==$#));then local -ir s=$gcd_SYS_SIZE;else local -ir s=$1;fi
-	gcd-log 2 Fetch gcd-fetch $s $((gcd_SYS_ENDTIME-$(date +%s))) || return
 	gcd-with-exit-trap 1 gcd-launch-return gcd-launch_ "$@"
 }
 gcd-launch_(){	# Alloc or boot, and launch
+	if((0==$#));then local -ir s=$gcd_SYS_SIZE;else local -ir s=$1;fi
+	gcd-log 2 Fetch gcd-fetch $s $((gcd_SYS_ENDTIME-$(date +%s))) || return
 	if((2==$# && 1==${#gcd_SERVED_SIZE[@]}));then
 		gcd-sys-reboot $2 || return
 		gcd-launch-job "$gcd_SERVED_JOBPATH" "$gcd_SERVED_JOBID" $gcd_SERVED_SIZE $2
@@ -574,46 +580,74 @@ gcd-launch_(){	# Alloc or boot, and launch
 	else
 		if((2==$#));then gcd-sys-free $2 || return;fi
 		for i in ${gcd_SERVED_IX[@]};do
-			gcd-critical 0 Alloc gcd-sys-alloc ${gcd_SERVED_SIZE[i]} || return
+			gcd-critical 2 Alloc gcd-sys-alloc ${gcd_SERVED_SIZE[i]} || return
 			gcd-critical 2 AllocWait gcd-sys-alloc-wait || return
 			gcd-launch-job "${gcd_SERVED_JOBPATH[i]}" "${gcd_SERVED_JOBID[i]}" ${gcd_SERVED_SIZE[i]} $gcd_SYS_BOOTEDBLOCK
 			gcd_SERVED_STARTED[i]=1
 		done
+		if((gcd_SERVED_SIZE[i-1]==gcd_SYS_BLOCKSIZE_DEFAULT));then
+			# When gcd-sys-alloc receives gcd_SYS_BLOCKSIZE_DEFAULT, it may creates more blocks than the jobs we fetched,
+			# if previous unsuccessful job launches leave those blocks unused, and meanwhile new jobs become available.
+			# We try to consume those partitions here.
+			while gcd-log 2 AllocWait gcd-sys-alloc-wait;do
+				gcd-launch-return
+				gcd_SERVED_JOBPATH=();gcd_SERVED_JOBID=();gcd_SERVED_SIZE=();gcd_SERVED_STARTED=();gcd_SERVED_IX=()
+				gcd-log 2 LaunchFetch gcd-fetch $gcd_SYS_BLOCKSIZE_DEFAULT $((gcd_SYS_ENDTIME-$(date +%s))) || return
+				# Assume only one job can be fetched for gcd_SYS_BLOCKSIZE_DEFAULT is the smallest
+				gcd-launch-job "$gcd_SERVED_JOBPATH" "$gcd_SERVED_JOBID" $gcd_SERVED_SIZE $gcd_SYS_BOOTEDBLOCK
+				gcd_SERVED_STARTED=1
+			done
+		fi
 	fi
+}
+
+gcd-report(){	# Report running jobs
+	local -i i
+	local -a s=()
+	for((i=0;i<${#gcd_JPID[@]};++i));do if((0<gcd_JPID[i]));then s+=("$i@${gcd_JBLOCKS[i]}:${gcd_JSIZES[i]}");fi;done
+	gcd-log 1 "Current running jobs: ${s[*]}"
 }
 
 gcd-manage(){
 	local -i gcd_JID=0
-	local -ai gcd_JPID gcd_JSIZES
+	local -ai gcd_JPID gcd_JSIZES gcd_JBEGIN gcd_JTIME
 	local -a gcd_JBLOCKS
-	local -i i st r
 
-	gcd-log 1 Launch gcd-launch
+	gcd-log 1 Launch gcd-launch || return
 
-	i=0;r=0
+	local -i t st i=0 nrun=0 size=0 last_size=$gcd_SYS_SIZE
 	while true; do
-		if ((0<gcd_JPID[$i])); then	# not finished
-			((++r))
+		if ((0<gcd_JPID[i])); then	# not finished
+			((++nrun));((size+=gcd_JSIZES[i]))
 			sleep $gcd_MANAGE_CHECK_WAIT
-			if ! kill -0 ${gcd_JPID[$i]} 2>/dev/null; then	# finished
-				wait ${gcd_JPID[$i]}
-				st=$?
-				gcd-log 1 "Job $(gcd-job-string $i) returns $st"
-				((gcd_JPID[$i]=-gcd_JPID[$i]))
-				gcd-log 1 Launch gcd-launch ${gcd_JSIZES[$i]} ${gcd_JBLOCKS[$i]}
+			if ! kill -0 ${gcd_JPID[i]} 2>/dev/null; then	# finished
+				((--nrun));((size-=gcd_JSIZES[i]))
+				wait ${gcd_JPID[i]};st=$?
+				((gcd_JTIME[i]=$(date +%s)-gcd_JBEGIN[i]))
+				gcd-log 1 "Job $(gcd-job-string $i) returned $st used ${gcd_JTIME[i]} seconds and cost $((gcd_JTIME[i]*gcd_JSIZES[i])) node-seconds"
+				((gcd_JPID[i]=-gcd_JPID[i]))
+				gcd-log 1 Launch gcd-launch ${gcd_JSIZES[i]} ${gcd_JBLOCKS[i]}
 			fi
 		fi
 		i+=1
-		if((${#gcd_JPID[@]}<=i));then if((0==r));then break;else i=0;r=0;fi;fi
+		if((${#gcd_JPID[@]}<=i));then if((0==nrun));then break;else
+			if((size<last_size));then last_size=$size;gcd-log 1 "REDUCED capacity run of size: $size (full: $gcd_SYS_SIZE)";gcd-report;fi
+			i=0;nrun=0;size=0
+		fi;fi
 	done
+	gcd-critical 2 SelfSub gcd-sys-submit-self
+	local -ir n=$((gcd_SYS_SIZE*($(date +%s)-gcd_BEGIN)))
+	t=0;for((i=0;i<${#gcd_JSIZES[@]};++i));do ((t+=gcd_JSIZES[i]*gcd_JTIME[i]));done
+	gcd-log 1 "Productivity (with manage overhead): $t / $n : $((100*t/n))%"
 }
 
 if [[ -z ${gcd_SYS_UNIQUEID+X} ]];then gcd-process-init "GCD";else gcd-process-init "GCD($gcd_SYS_UNIQUEID)";fi
 while(($#>0));do
-	if [[ -s $gcd_JOBDIR/$1/PROP ]];then gcd_PREFER_PATH+=("$gcd_JOBDIR/$1")
-	else gcd_PREFER_CATEGORY+=("$1")
-	fi
-	shift
+	case $1 in
+	-v)gcd_VERBOSITY=2;shift;;
+	-s)gcd_VERBOSITY=0;shift;;
+	*)if [[ -s $gcd_JOBDIR/$1/PROP ]];then gcd_PREFER_PATH+=("$gcd_JOBDIR/$1");else gcd_PREFER_CATEGORY+=("$1");fi;shift
+	esac
 done
 gcd-log 2 "gcd_PREFER_CATEGORY=(${gcd_PREFER_CATEGORY[*]})"
 ((0<${#gcd_PREFER_PATH[@]}))&&gcd-log 2 "gcd_PREFER_PATH=(${gcd_PREFER_PATH[*]})"

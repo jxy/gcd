@@ -2,35 +2,52 @@ NAME
 	gcd - Grand Central Dispatch
 
 SYNOPSIS
-	source gcd
 	./gcd
+		Prints status and offers to submit jobs according to
+		`gcd_CONF_PLAN'.
+
+	./scripts/r
+		Universal job script that runs jobs (section FILES
+	UNDER JOBPATH).
 
 DESCRIPTION
-	It implements functions for dispatching long running jobs.
-	Multiple shell scripts can `source' and call functions simultaneously.
+	It implements functions for dispatching long running jobs,
+	with a file system based lock for parallel status update.
 
-	When called directly, it shows the status of the jobs by calling
-	`gcd-status'.
-
-FUNCTIONS
-	gcd-status [JOBPATH ...] [CATEGORY ...]
-		Generates a report of job status within the specified
-		JOBPATH(s), and CATEGORY(ies).  Any arguments
-		exists under directory `jobs' is considered a JOBPATH.
-		Other arguments are CATEGORY(ies).
+	When called directly, `gcd' shows the status of the jobs and
+	suggests further actions.
 
 FILES
+	gcd
+		The source code for system independent functionalities.
+
+	conf
+		Configuration.
+
+			gcd_CONF_PLAN=(
+			10 8192 1440 ProjectName "Path and/or Category"
+			10 4096 360 ProjectName "Path and/or Category"
+			)
+
+		The array, gcd_CONF_PLAN, contains a list in sets
+		of 5 items: the number of jobs to submit, the size
+		(in number of nodes), the time (in minutes), the
+		project name, and extra parameters for a preferred
+		path and/or preferred categories.  Other global variables
+		can be set here, but only without the prefix `gcd'.
+
 	util/*
 		Scripts to be sourced that defines useful platform
 		dependent utility functions.
 
-	scripts/*
-		Files under this directory are designed to be submitted
-		to a queueing system that can run custom script
-		inside the top gcd directory.  Each script calls
-		fetch and return to manage job availability and uses
-		the files under JOBPATH to start and monitor jobs.
-		See section FILES UNDER JOBPATH for details.
+	scripts/r
+		The universal job scripts.  It is designed to be
+		submitted to a queuing system that can run custom
+		script inside the top gcd directory.  It manages
+		job availability and uses the files under JOBPATH
+		to start and monitor jobs.  See section FILES UNDER
+		JOBPATH for details.  Given platform support, it can
+		also be run directly, see files under `test' directory.
 
 	work/*
 		Job managers have their stdout and stderr redirected
@@ -68,13 +85,13 @@ FILES UNDER JOBPATH
 		finishing regardless of its last return status.
 		If time_limit is zero, it uses 5 percent more
 		than the previous max run time plus 20 minutes.
-		There is a special category, 'URGENT', with which
+		There is a special category, `URGENT', with which
 		jobs would get a higher priority.
 
 	LIST
 		All individual jobs under this JOBPATH.  This file
 		contains the list of JOBID, one per line.  Any line
-		that begins with '#' is ignored.
+		that begins with `#' is ignored.
 
 	JOB
 		This file is sourced under the containing directory.
@@ -116,8 +133,16 @@ FILES UNDER JOBPATH
 		is served and returned.  Job scripts record the
 		idle time during runs.
 
+TODO
+	Find an exit strategy.
+
 HISTORY
-	Feburary, 2017, version 1.0
+	February, 2017, version 1.0
 
 BUG
-	JOBID cannot begin with '#'.
+	JOBID cannot begin with `#', nor can it contain the path
+	separator `/'.
+
+	The path to gcd cannot contain single quotes.
+
+	Manual intervention required to stop jobs from self-replicating.

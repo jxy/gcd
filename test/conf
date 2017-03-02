@@ -1,0 +1,6 @@
+# NJOBS SIZE(node) TIME(min) PROJECT EXTRA(path and/or category)
+gcd_CONF_PLAN=(
+3 8192 1440 TESTPROJ ""
+3 4096 360 TESTPROJ ""
+3 4096 720 TESTPROJ ""
+)

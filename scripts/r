@@ -1,5 +1,5 @@
 #!/bin/bash
 # Universal job scripts.
 set -u
-source ../gcd
+source ../gcd "$@"
 gcd-manage

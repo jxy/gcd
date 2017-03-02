@@ -1,10 +1,14 @@
 # system specifics for mira@anl
 
-declare -r gcd_SYS_UNIQUEID=$COBALT_JOBID
-declare -r gcd_SYS_LOCK="$gcd_WORKDIR/.sys.lock.$gcd_SYS_UNIQUEID"	# lock for block operations
+if [[ ! -z ${COBALT_JOBID+X} ]];then
+	declare -r gcd_SYS_UNIQUEID=$COBALT_JOBID
+	declare -r gcd_SYS_LOCK="$gcd_WORKDIR/.sys.lock.$gcd_SYS_UNIQUEID"	# lock for block operations
+	declare -ir gcd_SYS_SIZE=$COBALT_JOBSIZE
+	declare -ir gcd_SYS_ENDTIME=$COBALT_ENDTIME
+fi
+
+declare -ir gcd_SYS_MAXQUEUE=20
 declare -ir gcd_SYS_BLOCKSIZE_DEFAULT=512
-declare -ir gcd_SYS_SIZE=$COBALT_JOBSIZE
-declare -ir gcd_SYS_ENDTIME=$COBALT_ENDTIME
 
 declare gcd_SYS_BOOTEDBLOCK
 
@@ -51,7 +55,7 @@ gcd-sys-alloc(){	# Find available blocks and boot them, populate array gcd__SYS_
 	local -i st=$?
 	if ((0!=st));then return $st;fi
 	if ((gcd_SYS_BLOCKSIZE_DEFAULT!=$1));then gcd__SYS_BOOTBLOCK=(${gcd__SYS_BOOTBLOCK[0]});fi
-	for((n=0;n<${#gcd__SYS_BOOTBLOCK[@]};++n));do gcd-critical 0 'Boot' boot-block --block ${gcd__SYS_BOOTBLOCK[$n]}&gcd__SYS_BOOTPID+=($!);done
+	for((n=0;n<${#gcd__SYS_BOOTBLOCK[@]};++n));do gcd-critical 2 'Boot' boot-block --block ${gcd__SYS_BOOTBLOCK[$n]}&gcd__SYS_BOOTPID+=($!);done
 	return 0
 }
 gcd-sys-alloc-wait(){	# Wait for unfinished async allocations, changes gcd__SYS_BOOTPID gcd_SYS_BOOTEDBLOCK
@@ -65,7 +69,7 @@ gcd-sys-alloc-wait(){	# Wait for unfinished async allocations, changes gcd__SYS_
 	if((n<0 || n>=${#gcd__SYS_BOOTPID[@]}));then
 		return 1
 	elif((gcd__SYS_BOOTPID[n]>0));then
-		gcd-critical 1 WaitBoot wait ${gcd__SYS_BOOTPID[$n]}
+		gcd-critical 2 WaitBoot wait ${gcd__SYS_BOOTPID[$n]}
 		local -ir st=$?
 		((gcd__SYS_BOOTPID[n]=-gcd__SYS_BOOTPID[n]))
 		gcd_SYS_BOOTEDBLOCK=${gcd__SYS_BOOTBLOCK[$n]}
@@ -73,8 +77,8 @@ gcd-sys-alloc-wait(){	# Wait for unfinished async allocations, changes gcd__SYS_
 	else gcd-critical 0 "Boot $n of ${gcd__SYS_BOOTBLOCK[$n]} already waited"
 	fi
 }
-gcd-sys-free(){ gcd-critical 0 Free gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --free;}
-gcd-sys-reboot(){ gcd-critical 0 Reboot gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --reboot;}
+gcd-sys-free(){ gcd-critical 2 Free gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --free;}
+gcd-sys-reboot(){ gcd-critical 2 Reboot gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --reboot;}
 
 gcd-sys-run-job(){
 	# args: OUTFN ERRFN CMD ...
@@ -84,4 +88,44 @@ gcd-sys-run-job(){
 	runjob --block $gcd_JOBBLOCK -p $rank_per_node --np $((block_size*rank_per_node)) --verbose=INFO \
 		--envs $gcd_SYS_RUNENV OMP_NUM_THREADS=$omp_nthreads BG_COREDUMPPATH=./core/$COBALT_JOBID.$gcd_JID/ \
 		: "${@:3}" >"$1" 2>"$2"
+}
+
+gcd-sys-submit(){
+	# args: PROJECT TMIN NNODES CMD [...]
+	local -r project="$1"
+	local -r tmin="$2"
+	local -ir nnodes=$3
+	qsub -A "$project" -t "$tmin" -n $nnodes --mode script --disable_preboot "${@:4}"
+}
+
+gcd-sys-submit-self(){
+	local p t n a
+	read p t n a < <(qstat --header=Project:WallTime:Nodes:Args $COBALT_JOBID|tail -n1)
+	echo "/usr/bin/qsub -A '$p' -t '$t' -n $n --mode script --disable_preboot '$gcd_JOBSCRIPT' $a" | at now+10min
+}
+
+declare -a gcd_SYS_MANAGED_J=() gcd_SYS_MANAGED_P=() gcd_SYS_MANAGED_C=() gcd_SYS_MANAGED_A=()
+declare -ai gcd_SYS_MANAGED_T=() gcd_SYS_MANAGED_N=()
+
+gcd-sys-get-managed(){
+	local j p c a
+	local -i t n
+	gcd_SYS_MANAGED_T=()	# time remaining
+	gcd_SYS_MANAGED_J=()	# unique id
+	gcd_SYS_MANAGED_P=()	# project
+	gcd_SYS_MANAGED_N=()	# node number
+	gcd_SYS_MANAGED_C=()	# command
+	gcd_SYS_MANAGED_A=()	# args
+	while read t j p n c a;do
+		gcd-log 2 "$t , $j , $p , $n , $c , $a"
+		gcd-log 2 "$(gcd-abspath "$GCD")  <>  $(gcd-abspath "$(dirname "$(dirname "$c")")")"
+		[[ -s $c ]] || continue
+		[[ $(gcd-abspath "$gcd_SCRIPTDIR") == $(gcd-abspath "$(dirname "$c")") ]] || continue
+		gcd_SYS_MANAGED_T+=($t)
+		gcd_SYS_MANAGED_J+=("$j")
+		gcd_SYS_MANAGED_P+=("$p")
+		gcd_SYS_MANAGED_N+=($n)
+		gcd_SYS_MANAGED_C+=("$c")
+		gcd_SYS_MANAGED_A+=("$a")
+	done < <(qstat --header=WallTime:TimeRemaining:JobID:Project:Nodes:Command:Args|sed 1,2d|awk '{if($2~"[0-9:]")split($2,t,":");else split($1,t,":");a="";for(i=3;i<=NF;++i){a=a" "$i}print t[3]+60*(t[2]+60*t[1]),a}')
 }

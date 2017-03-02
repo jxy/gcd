@@ -2,8 +2,13 @@
 # Run test
 f(){ while read;do printf '[%s] %s\n' "$1" "$REPLY";done;}
 
-{ { { ./testing.mira 0 4096 P-4096-0 $((40+$(date +%s))) 2>&1 1>&3 3>&- | f 0e;} 3>&1 1>&2 | f 0o &
-    { ./testing.mira 1 8192 P-8192-0 $((40+$(date +%s))) MEASURE 2>&1 1>&3 3>&- | f 1e;} 3>&1 1>&2 | f 1o &
-    { ./testing.mira 2 8192 P-8192-1 $((40+$(date +%s))) HMC 2>&1 1>&3 3>&- | f 2e;} 3>&1 1>&2 | f 2o &
-   wait
-} 2>&1 1>&3 3>&- | tee ../work/test.stderr;} 3>&1 1>&2 | tee ../work/test.stdout
+{ { { ./r 0 4096 P-4096-0 $((40+$(date +%s)))         2>&1 1>&3 3>&- | f 0e;} 3>&1 1>&2 | f 0o;} 2>&1 1>&3 3>&- | tee -a ../work/test.0.stderr;} 3>&1 1>&2 | tee -a ../work/test.0.stdout &
+{ { { ./r 1 8192 P-8192-0 $((40+$(date +%s))) MEASURE 2>&1 1>&3 3>&- | f 1e;} 3>&1 1>&2 | f 1o;} 2>&1 1>&3 3>&- | tee -a ../work/test.1.stderr;} 3>&1 1>&2 | tee -a ../work/test.1.stdout &
+{ { { ./r 2 8192 P-8192-1 $((40+$(date +%s))) HMC     2>&1 1>&3 3>&- | f 2e;} 3>&1 1>&2 | f 2o;} 2>&1 1>&3 3>&- | tee -a ../work/test.2.stderr;} 3>&1 1>&2 | tee -a ../work/test.2.stdout &
+wait
+declare -ai p t
+for n in 0 1 2;do
+	p[n]=$(awk '/node-seconds/{t+=$18}END{print t}' ../work/*$n.stdout)
+	t[n]=$(awk '/node-seconds/{t+=$10}END{print t}' ../work/*$n.stderr)
+	printf '## Actual accumulated productivity for run %d : %8d / %8d : %3d%%\n' $n ${p[n]} ${t[n]} $((p[n]*100/t[n]))
+done

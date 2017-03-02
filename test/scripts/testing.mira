@@ -1,18 +1,5 @@
-#!/bin/bash
-# Universal job scripts.
 # For testing scripts on mira
-set -u
-
-declare -r COBALT_JOBID="$1"
-declare -ir COBALT_JOBSIZE=$2
-declare -r COBALT_PARTNAME="$3"
-declare -ir COBALT_ENDTIME=$4
-shift 4
-
-declare -i test_boot_available=$COBALT_JOBSIZE
-declare -ai test_boot_sizes test_boot_sizes_n test_free_sizes_n
-test-part-save(){
-	local -i i
+test-part-save(){ local -i i
 	for((i=0;i<${#test_boot_sizes[@]};++i));do
 		echo ${test_boot_sizes[i]} ${test_boot_sizes_n[i]} ${test_free_sizes_n[i]}
 	done>"$testing_state"
@@ -23,17 +10,19 @@ test-part-load(){
 	test_boot_sizes_n=()
 	test_free_sizes_n=()
 	[[ -s $testing_state ]] || return
-	local -i i=0 s n f
+	local -i s n f
 	while read s n f;do
-		test_boot_sizes[i]=$s
-		test_boot_sizes_n[i]=$n
-		test_free_sizes_n[i]=$f
+		test_boot_sizes+=($s)
+		test_boot_sizes_n+=($n)
+		test_free_sizes_n+=($f)
 		((test_boot_available-=s*(n-f)))
 	done<"$testing_state"
 }
-get-bootable-blocks(){
+get-bootable-blocks_(){
 	gcd-log 1 "get-bootable-blocks $*" >&2
-	test-part-load
+	local -ai test_boot_sizes test_boot_sizes_n test_free_sizes_n
+	local -i test_boot_available
+	test-part-load >&2
 	local -i s
 	while(($#>0));do case $1 in
 		--size)s=$2;shift 2;;
@@ -43,7 +32,7 @@ get-bootable-blocks(){
 	((test_boot_available<s)) && return 1
 	local -i n i j
 	((n=test_boot_available/s))
-	for((i=0;i<${#test_boot_sizes[@]};++i));do ((test_boot_sizes[i]==s))&&break;done
+	for((i=0;i<${#test_boot_sizes[@]};++i));do((test_boot_sizes[i]==s))&&break;done
 	local b
 	if((i==${#test_boot_sizes[@]}));then
 		test_boot_sizes[i]=s
@@ -55,10 +44,13 @@ get-bootable-blocks(){
 	fi
 	gcd-log 1 "bootable-blocks $b" >&2
 	echo $b
-	test-part-save
+	test-part-save >&2
 }
-boot-block(){
+get-bootable-blocks(){ gcd-lock "$testing_state.lock" get-bootable-blocks_ "$@";}
+boot-block_(){
 	gcd-log 1 "boot-block $*"
+	local -ai test_boot_sizes test_boot_sizes_n test_free_sizes_n
+	local -i test_boot_available
 	test-part-load
 	local b o=b
 	while(($#>0));do case $1 in
@@ -69,33 +61,13 @@ boot-block(){
 	esac;done
 	local -i i s=${b%-*}
 	case $o in
-		b)
-			for((i=0;i<${#test_boot_sizes[@]};++i));do if((test_boot_sizes[i]==s));then
-				((++test_boot_sizes_n[i]));break
-			fi;done;;
-		f)
-			for((i=0;i<${#test_boot_sizes[@]};++i));do if((test_boot_sizes[i]==s));then
-				((++test_free_sizes_n[i]));break
-			fi;done;;
+		b)for((i=0;i<${#test_boot_sizes[@]};++i));do if((test_boot_sizes[i]==s));then((++test_boot_sizes_n[i]));break;fi;done;;
+		f)for((i=0;i<${#test_boot_sizes[@]};++i));do if((test_boot_sizes[i]==s));then((++test_free_sizes_n[i]));break;fi;done;;
 	esac
 	test-part-save
 }
-runjob(){
-	gcd-info "runjob $*"
-	gcd-log 1 "runjob" declare -p >&2
-	sleep $((4+RANDOM%4))
-	gcd-info "DONE runjob $*"
-}
-
-source ../gcd "$@"
-
-declare -r testing_state="$gcd_WORKDIR/testing.$COBALT_JOBID.state"
-rm -f "$testing_state"
-
-gcd_HEALTH_CHECK_WAIT=0.2
-gcd_MANAGE_CHECK_WAIT=0.2
-gcd_TIME_LIMIT_GRACE=10
-gcd_UPDATE_TIME_GRACE=5
-#gcd_VERBOSITY=2
-
-gcd-manage
+boot-block(){ gcd-lock "$testing_state.lock" boot-block_ "$@";}
+runjob(){ gcd-info "runjob $*";gcd-log 1 "runjob" declare -p >&2;sleep $((4+RANDOM%4));gcd-info "DONE runjob $*";}
+qstat(){ true;}
+qsub(){ gcd-log 0 "running qsub: $*";}
+at(){ gcd-log 1 "at called with $*";local l;while read l;do gcd-log 1 "at got command: $l";done;}

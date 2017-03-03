@@ -499,6 +499,15 @@ gcd-guess-update-time(){	# Guess the update time from previous runs
 	echo $t
 }
 
+gcd-backup(){	# back up file with warning if there are more than three
+	# args: FILEPATH
+	local -r f="$1"
+	local -i i=0
+	while [[ -a $f.~$i~ ]];do ((++i));done
+	((3<=i)) && gcd-critical 0 "There are $i back up files of $f" | tee -a run/$gcd_JOBID.log
+	gcd-critical 2 Backup mv "$f" "$f.~$i~"
+}
+
 gcd-job-string(){
 	# args: [INDEX]
 	if((0==$#));then echo "[$gcd_JID:$(basename "$gcd_JOBPATH"):$gcd_JOBID@$gcd_JOBBLOCK:$gcd_JOBSIZE]"
@@ -523,6 +532,8 @@ gcd-run-job_(){	# run-job, assuming under the JOBPATH, changes gcd_JOBRETURN
 	gcd-critical 2 sourceJOB source JOB
 	if((0>=time_limit));then time_limit=$(gcd-guess-time-limit);fi
 	if((0>=update_time));then update_time=$(gcd-guess-update-time);fi
+	[[ -a $output_path ]] && gcd-backup "$output_path"
+	[[ -a $error_path ]] && gcd-backup "$error_path"
 	gcd_JOBRETURN=$gcd_MISC_ERROR
 	gcd-log 0 Run gcd-care $update_time "$output_path" gcd-sys-run-job "$output_path" "$error_path" "${run[@]}"
 	gcd_JOBRETURN=$?

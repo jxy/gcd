@@ -627,7 +627,7 @@ gcd-report(){	# Report running jobs
 	gcd-log 1 "Current running jobs: ${s[*]}"
 }
 
-gcd-manage(){
+gcd-manage_(){
 	# We keep track of the physical blocks and their sizes jobs are using.
 	# When jobs finished we changes the sign of jpid to indicate that.
 	local -i gcd_JID=0
@@ -659,11 +659,11 @@ gcd-manage(){
 			i=0;nrun=0;size=0
 		fi;fi
 	done
-	gcd-critical 2 SelfSub gcd-sys-submit-self
 	local -ir n=$((gcd_SYS_SIZE*($(date +%s)-gcd_BEGIN)))
 	t=0;for((i=0;i<${#gcd_JSIZES[@]};++i));do ((t+=gcd_JSIZES[i]*gcd_JTIME[i]));done
 	gcd-log 1 "Productivity (with manage overhead): $t / $n : $((100*t/n))%"
 }
+gcd-manage(){ gcd-with-exit-trap 1 gcd-sys-submit-self gcd-manage_;}
 
 if [[ -z ${gcd_SYS_UNIQUEID+X} ]];then gcd-process-init "GCD";else gcd-process-init "GCD($gcd_SYS_UNIQUEID)";fi
 while(($#>0));do

@@ -53,10 +53,10 @@ declare -ir gcd_NO_JOBS=10
 declare -ir gcd_NOT_ENOUGH_JOBS=11
 declare -ir gcd_CANNOT_START=12
 declare -ir gcd_MISC_ERROR=13
+declare -ir gcd_JOB_SERVED=16
 declare -ir gcd_HEALTH_BAD=31	# return code for bad health
 declare -ir gcd_HEALTH_DIED=32	# return code for finished processes
-declare -ir gcd_JOB_SERVED=16
-declare -ir gcd_JOB_STOP=17
+declare -ir gcd_HW_ERROR=42
 
 declare -a gcd_JOBS_PT	# jobpath
 declare -ai gcd_JOBS_BS	# block_size
@@ -581,18 +581,18 @@ gcd-launch(){	# Fetch available jobs and launch them with specified size and par
 	local -i gcd_SERVED_TIME=$(date +%s)
 	gcd-with-exit-trap 1 gcd-launch-return gcd-launch_ "$@"
 }
-gcd-launch_(){	# Alloc or boot, and launch
+gcd-launch_(){	# Alloc or boot, and launch, should be run with 'gcd-with-exit-trap 1 gcd-launch-return gcd-launch_ "$@"'
 	if((0==$#));then local -ir s=$gcd_SYS_SIZE;else local -ir s=$1;fi
 	gcd-log 2 Fetch gcd-fetch $s $((gcd_SYS_ENDTIME-$(date +%s))) || return
-	if((2==$# && 1==${#gcd_SERVED_SIZE[@]}));then
-		gcd-sys-reboot $2 || return
+	if((2==$# && 1==${#gcd_SERVED_SIZE[@]}));then	# When a physical block is allocated, and one job fits.
+		gcd-sys-reboot $2 || return $gcd_HW_ERROR
 		gcd-launch-job "$gcd_SERVED_JOBPATH" "$gcd_SERVED_JOBID" $gcd_SERVED_SIZE $2
 		gcd_SERVED_STARTED=1
 	else
-		if((2==$#));then gcd-sys-free $2 || return;fi
+		if((2==$#));then gcd-sys-free $2 || return $gcd_HW_ERROR;fi	# When a physical block is allocated but we need multiple jobs to fit it.
 		for i in ${gcd_SERVED_IX[@]};do
-			gcd-critical 2 Alloc gcd-sys-alloc ${gcd_SERVED_SIZE[i]} || return
-			gcd-critical 2 AllocWait gcd-sys-alloc-wait || return
+			gcd-critical 2 Alloc gcd-sys-alloc ${gcd_SERVED_SIZE[i]} || return $gcd_HW_ERROR
+			gcd-critical 2 AllocWait gcd-sys-alloc-wait || return $gcd_HW_ERROR
 			gcd-launch-job "${gcd_SERVED_JOBPATH[i]}" "${gcd_SERVED_JOBID[i]}" ${gcd_SERVED_SIZE[i]} $gcd_SYS_BOOTEDBLOCK
 			gcd_SERVED_STARTED[i]=1
 		done
@@ -600,11 +600,12 @@ gcd-launch_(){	# Alloc or boot, and launch
 			# When gcd-sys-alloc receives gcd_SYS_BLOCKSIZE_DEFAULT, it may creates more blocks than the jobs we fetched,
 			# if previous unsuccessful job launches leave those blocks unused, and meanwhile new jobs become available.
 			# We try to consume those partitions here.
-			while gcd-log 2 AllocWait gcd-sys-alloc-wait;do
+			while gcd-log 2 AllocWait gcd-sys-alloc-wait;do	# It's okay to error.
 				gcd-launch-return
-				gcd_SERVED_JOBPATH=();gcd_SERVED_JOBID=();gcd_SERVED_SIZE=();gcd_SERVED_STARTED=();gcd_SERVED_IX=()
+				gcd_SERVED_JOBPATH=();gcd_SERVED_JOBID=();gcd_SERVED_SIZE=();gcd_SERVED_STARTED=();gcd_SERVED_IX=();gcd_SERVED_TIME=$(date +%s)
 				gcd-log 2 LaunchFetch gcd-fetch $gcd_SYS_BLOCKSIZE_DEFAULT $((gcd_SYS_ENDTIME-$(date +%s))) || return
 				# Assume only one job can be fetched for gcd_SYS_BLOCKSIZE_DEFAULT is the smallest
+				# If not gcd-launch-return (in our exit trap) should take care of the not started ones.
 				gcd-launch-job "$gcd_SERVED_JOBPATH" "$gcd_SERVED_JOBID" $gcd_SERVED_SIZE $gcd_SYS_BOOTEDBLOCK
 				gcd_SERVED_STARTED=1
 			done
@@ -620,13 +621,15 @@ gcd-report(){	# Report running jobs
 }
 
 gcd-manage(){
+	# We keep track of the physical blocks and their sizes jobs are using.
+	# When jobs finished we changes the sign of jpid to indicate that.
 	local -i gcd_JID=0
 	local -ai gcd_JPID gcd_JSIZES gcd_JBEGIN gcd_JTIME
 	local -a gcd_JBLOCKS
 
 	gcd-log 1 Launch gcd-launch || return
 
-	local -i t st i=0 nrun=0 size=0 last_size=$gcd_SYS_SIZE
+	local -i t st i=0 nrun=0 size=0 last_size=$gcd_SYS_SIZE emergency=0
 	while true; do
 		if ((0<gcd_JPID[i])); then	# not finished
 			((++nrun));((size+=gcd_JSIZES[i]))
@@ -637,7 +640,10 @@ gcd-manage(){
 				((gcd_JTIME[i]=$(date +%s)-gcd_JBEGIN[i]))
 				gcd-log 1 "Job $(gcd-job-string $i) returned $st used ${gcd_JTIME[i]} seconds and cost $((gcd_JTIME[i]*gcd_JSIZES[i])) node-seconds"
 				((gcd_JPID[i]=-gcd_JPID[i]))
-				gcd-log 1 Launch gcd-launch ${gcd_JSIZES[i]} ${gcd_JBLOCKS[i]}
+				if((0==emergency));then	# Only launch jobs if zero emergency
+					gcd-log 1 Launch gcd-launch ${gcd_JSIZES[i]} ${gcd_JBLOCKS[i]};st=$?
+					((gcd_HW_ERROR==st)) && emergency=$gcd_HW_ERROR
+				fi
 			fi
 		fi
 		i+=1

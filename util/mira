@@ -77,8 +77,8 @@ gcd-sys-alloc-wait(){	# Wait for unfinished async allocations, changes gcd__SYS_
 	else gcd-critical 0 "Boot $n of ${gcd__SYS_BOOTBLOCK[$n]} already waited"
 	fi
 }
-gcd-sys-free(){ gcd-critical 2 Free gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --free;}
-gcd-sys-reboot(){ gcd-critical 2 Reboot gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --reboot;}
+gcd-sys-free(){ gcd-try 3 gcd-critical 2 Free gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --free;}
+gcd-sys-reboot(){ gcd-try 3 gcd-critical 2 Reboot gcd-lock "$gcd_SYS_LOCK" boot-block --block $1 --reboot;}
 
 gcd-sys-run-job(){
 	# args: OUTFN ERRFN CMD ...

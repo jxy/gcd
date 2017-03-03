@@ -282,6 +282,13 @@ gcd-word-in-str(){	# Test if word is in the string
 	[[ $2 =~ $r ]]
 }
 
+gcd-try(){	# Try command a few times until success
+	# args: MAXTRY CMD ...
+	local -i st i n=$1;shift
+	for((i=0;i<n;++i));do "$@";st=$?;((0==st))&&break;done
+	return $st
+}
+
 gcd-status_(){	# Populates gcd_BLOCKSIZE gcd_NBLOCK_MAX if sourced
 	gcd-critical 2 GetJobProp gcd-get-jobs-prop || return
 	gcd-critical 2 GetJobCount gcd-get-jobs-count || return

@@ -172,7 +172,7 @@ gcd-critical(){	# Same as gcd-log, but save info in gcd_CRITICAL file
 	else
 		gcd-log $v "$@"
 		local -ir st=$?
-		if((0!=st));then gcd-info "$1" "cmd:$(printf " '%s'" "${@:2}") failed, returned $st" >>$gcd_CRITICAL;fi
+		if((0!=st));then gcd-info "$1" "cmd:$(printf " '%s'" "${@:2}") failed, returned $st" | tee -a $gcd_CRITICAL;fi
 		return $st
 	fi
 }

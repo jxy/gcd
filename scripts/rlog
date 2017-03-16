@@ -1,0 +1,3 @@
+#!/bin/bash
+#Read file and convert HEX epoch to date and print
+awk --posix '$1 ~ /^([0-9A-F]){8}$/{"date --rfc-3339=seconds -d $(echo @$((0x" $1 ")))"|getline d;print "["d"] "$0}' "$@"

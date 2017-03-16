@@ -183,6 +183,7 @@ gcd-get-jobs-count(){	# Count jobs, should be called following gcd-get-jobs-prop
 	local p l
 	for ((i=0;i<${#gcd_JOBS_PT[@]};++i));do
 		p="${gcd_JOBS_PT[i]}"
+		[[ -d $p/run ]] || mkdir "$p/run"
 		gcd_JOBS_available[i]=0
 		gcd_JOBS_running[i]=0
 		gcd_JOBS_stop[i]=0
@@ -209,6 +210,7 @@ gcd-get-jobs-prop(){	# Reads PROP under each JOBPATH
 	local -i n=0
 	for p in "$gcd_JOBDIR"/*;do
 		[[ -s $p/PROP && -s $p/LIST && -s $p/JOB ]] || continue
+		[[ -d $p/run ]] || mkdir "$p/run"
 		gcd_JOBS_PT[n]="$p"
 		gcd-critical 2 GetProp source "$p/PROP"
 		if((0>=time_limit));then time_limit=$(gcd-guess-time-limit "$p");fi

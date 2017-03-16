@@ -408,9 +408,9 @@ gcd-lock(){	# gcd-lock LOCKFILE CMD [ARGS...]
 	while ! mkdir "$lock" 2>/dev/null;do
 		sleep 0.1
 		n+=1
-		if((0==n%30));then gcd-log 1 "Still waiting for lock: $lock";fi
+		if((0==n%30));then gcd-critical 1 "Still waiting for lock: $lock";fi
 	done
-	if((30<n));then gcd-log 1 "Lock $lock acquired";fi
+	#if((30<n));then gcd-critical 1 "Lock $lock acquired";fi
 	gcd-with-exit-trap 2 rmdir "$lock" "$@"
 }
 

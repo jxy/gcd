@@ -33,9 +33,6 @@ if [[ -s ../scripts/testing.mira ]];then
 	source ../scripts/testing.mira
 fi
 
-declare -a gcd_CONF_PLAN
-source "$gcd_CONF"
-
 declare -r gcd_CRITICAL="$gcd_WORKDIR/CRITICAL"
 declare -r gcd_LOCK="$gcd_WORKDIR/.lock"	# lock for updating states
 
@@ -57,6 +54,9 @@ declare -ir gcd_JOB_SERVED=16
 declare -ir gcd_HEALTH_BAD=31	# return code for bad health
 declare -ir gcd_HEALTH_DIED=32	# return code for finished processes
 declare -ir gcd_HW_ERROR=42
+
+declare -a gcd_CONF_PLAN
+source "$gcd_CONF"
 
 declare -a gcd_JOBS_PT	# jobpath
 declare -ai gcd_JOBS_BS	# block_size
@@ -493,20 +493,20 @@ gcd-care(){	# Check output file timestamp while running a long running job
 
 gcd-guess-time-limit(){	# Guess the time limit from previous runs
 	# args: [JOBPATH]
-	if((0==$#));then local -r p=.;else local -r p="$1";fi
+	if((0==$#));then local -r p=. s="$(basename "$(pwd)")";else local -r p="$1" s="$(basename "$1")";fi
 	local -i t=$(find "$p/run" -name '*.log' -exec sed -n '/TIME SPAN/s/^.*TIME SPAN \([0-9]*\) .*$/\1/p' {} \; | sort -nr | head -n1)
 	local -i l=$t
-	if((0<t));then((l=gcd_TIME_LIMIT_GRACE+105*t/100));gcd-critical 0 "Guessed time_limit=$l from max time span $t">&2;fi
+	if((0<t));then((l=gcd_TIME_LIMIT_GRACE+105*t/100));gcd-critical 0 "'$s': Guessed time_limit=$l from max time span $t">&2;fi
 	echo $l
 }
 gcd-guess-update-time(){	# Guess the update time from previous runs
 	# args: [JOBPATH]
-	if((0==$#));then local -r p=.;else local -r p="$1";fi
+	if((0==$#));then local -r p=. s="$(basename "$(pwd)")";else local -r p="$1" s="$(basename "$1")";fi
 	local -i t=$(find "$p/run"  -name '*.log' -exec sed -n '/IDLE TIME/s/^.*IDLE TIME \([0-9]*\) .*$/\1/p' {} \; | sort -nr | head -n1)
 	local -i l=$t
 	if((0<t));then((l=gcd_UPDATE_TIME_GRACE+2*t));fi
 	if((time_limit<l && 0<time_limit || 0==l));then l=$time_limit;fi
-	if((0<l));then gcd-critical 0 "Guessed update_time=$t from max idle time $t">&2;fi
+	if((0<l));then gcd-critical 0 "'$s': Guessed update_time=$t from max idle time $t">&2;fi
 	echo $l
 }
 

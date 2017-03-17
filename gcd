@@ -495,17 +495,19 @@ gcd-guess-time-limit(){	# Guess the time limit from previous runs
 	# args: [JOBPATH]
 	if((0==$#));then local -r p=.;else local -r p="$1";fi
 	local -i t=$(find "$p/run" -name '*.log' -exec sed -n '/TIME SPAN/s/^.*TIME SPAN \([0-9]*\) .*$/\1/p' {} \; | sort -nr | head -n1)
-	if((0<t));then((t=gcd_TIME_LIMIT_GRACE+105*t/100));gcd-critical 0 "Guessed time_limit=$t">&2;fi
-	echo $t
+	local -i l=$t
+	if((0<t));then((l=gcd_TIME_LIMIT_GRACE+105*t/100));gcd-critical 0 "Guessed time_limit=$l from max time span $t">&2;fi
+	echo $l
 }
 gcd-guess-update-time(){	# Guess the update time from previous runs
 	# args: [JOBPATH]
 	if((0==$#));then local -r p=.;else local -r p="$1";fi
 	local -i t=$(find "$p/run"  -name '*.log' -exec sed -n '/IDLE TIME/s/^.*IDLE TIME \([0-9]*\) .*$/\1/p' {} \; | sort -nr | head -n1)
-	if((0<t));then((t=gcd_UPDATE_TIME_GRACE+2*t));fi
-	if((time_limit<t && 0<time_limit || 0==t));then t=$time_limit;fi
-	if((0<t));then gcd-critical 0 "Guessed update_time=$t">&2;fi
-	echo $t
+	local -i l=$t
+	if((0<t));then((l=gcd_UPDATE_TIME_GRACE+2*t));fi
+	if((time_limit<l && 0<time_limit || 0==l));then l=$time_limit;fi
+	if((0<l));then gcd-critical 0 "Guessed update_time=$t from max idle time $t">&2;fi
+	echo $l
 }
 
 gcd-backup(){	# back up file with warning if there are more than three

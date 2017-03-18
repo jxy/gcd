@@ -118,9 +118,9 @@ gcd-sys-get-managed(){
 	gcd_SYS_MANAGED_A=()	# args
 	while read t j p n c a;do
 		gcd-log 2 "$t , $j , $p , $n , $c , $a"
-		gcd-log 2 "$(gcd-abspath "$GCD")  <>  $(gcd-abspath "$(dirname "$(dirname "$c")")")"
+		gcd-log 2 "$(gcd-abspath "$GCD")  <>  $(dirname "$(dirname "$(gcd-abspath "$c")")")"
 		[[ -s $c ]] || continue
-		[[ $(gcd-abspath "$gcd_SCRIPTDIR") == $(gcd-abspath "$(dirname "$c")") ]] || continue
+		[[ $(gcd-abspath "$gcd_SCRIPTDIR") == $(dirname "$(gcd-abspath "$c")") ]] || continue
 		gcd_SYS_MANAGED_T+=($t)
 		gcd_SYS_MANAGED_J+=("$j")
 		gcd_SYS_MANAGED_P+=("$p")

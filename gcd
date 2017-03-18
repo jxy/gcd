@@ -506,7 +506,7 @@ gcd-guess-update-time(){	# Guess the update time from previous runs
 	local -i l=$t
 	if((0<t));then((l=gcd_UPDATE_TIME_GRACE+2*t));fi
 	if((time_limit<l && 0<time_limit || 0==l));then l=$time_limit;fi
-	if((0<l));then gcd-critical 0 "'$s': Guessed update_time=$t from max idle time $t">&2;fi
+	if((0<l));then gcd-critical 0 "'$s': Guessed update_time=$l from max idle time $t">&2;fi
 	echo $l
 }
 

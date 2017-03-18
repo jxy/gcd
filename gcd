@@ -70,7 +70,7 @@ declare -a gcd_EXIT_TRAP
 declare gcd_LOG_TAG
 declare -i gcd_PROC_LVL=0
 
-declare -r gcd_JOBID_RE='^[^ 	#]+$'
+declare -r gcd_JOBID_RE='^[^ 	#].*$'
 
 declare -ar gcd_LOG_FUNCS=(gcd-caller gcd-info gcd-log gcd-critical gcd-exit-trap gcd-exit-announce gcd-sig)
 
@@ -188,7 +188,7 @@ gcd-get-jobs-count(){	# Count jobs, should be called following gcd-get-jobs-prop
 		gcd_JOBS_running[i]=0
 		gcd_JOBS_stop[i]=0
 		while read l;do
-			[[ l =~ $gcd_JOBID_RE ]] || continue
+			[[ $l =~ $gcd_JOBID_RE ]] || continue
 			# check 'served' before 'stop'; the reverse of the order in gcd-return
 			if [[ -a $p/run/$l.served ]];then gcd_JOBS_running[i]+=1;continue;fi
 			if [[ -a $p/run/$l.stop ]];then gcd_JOBS_stop[i]+=1;continue;fi

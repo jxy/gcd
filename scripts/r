@@ -1,5 +1,6 @@
 #!/bin/bash
 # Universal job scripts.
 set -u
+cd "$(dirname "$(perl -e 'use Cwd "abs_path";print abs_path(shift)' "$0")")"
 source ../gcd "$@"
 gcd-manage

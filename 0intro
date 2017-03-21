@@ -110,7 +110,9 @@ FILES UNDER JOBPATH
 			"${run[@]}" >"$output_path" 2>"$error_path"
 
 		and the output_path is checked for possible hangs.
-		We consider the job hangs if it hasn't updated its
+		The output_path and error_path should be unique for
+		each job run, even for jobs with repeat=1.  We
+		consider the job hangs if it hasn't updated its
 		output file in the last update_time seconds, if
 		update_time is positive.  If update_time is zero,
 		it uses twice of the previous max update_time plus
@@ -145,6 +147,8 @@ HISTORY
 BUG
 	JOBID cannot begin with `#', nor can it contain the path
 	separator `/'.
+
+	Each job run should have unique output_path and error_path.
 
 	The path to gcd cannot contain single quotes.
 

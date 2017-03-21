@@ -50,6 +50,7 @@ declare -ir gcd_NO_JOBS=10
 declare -ir gcd_NOT_ENOUGH_JOBS=11
 declare -ir gcd_CANNOT_START=12
 declare -ir gcd_MISC_ERROR=13
+declare -ir gcd_BACKUP_ERROR=14
 declare -ir gcd_JOB_SERVED=16
 declare -ir gcd_HEALTH_BAD=31	# return code for bad health
 declare -ir gcd_HEALTH_DIED=32	# return code for finished processes
@@ -401,6 +402,12 @@ gcd-return(){	# Returns job running status
 	rm "$p/run/$d.served"
 	return $1
 }
+gcd-abort(){	# Stop a job from starting that requires attention
+	# WARNING: only call it from JOBPATH, still require gcd-return to be called for proper clean up.
+	# args: MESSAGE JOBID
+	local -r m="$1" d="$2"
+	gcd-critical 0 "Job $(gcd-job-string) ABORT called for '$m'" |tee -a "run/$d.stop"
+}
 
 gcd-lock(){	# gcd-lock LOCKFILE CMD [ARGS...]
  	local -r lock="$1"; shift
@@ -515,7 +522,7 @@ gcd-backup(){	# back up file with warning if there are more than three
 	local -r f="$1"
 	local -i i=0
 	while [[ -a $f.~$i~ ]];do ((++i));done
-	((3<=i)) && gcd-critical 0 "There are $i back up files of $f" | tee -a run/$gcd_JOBID.log
+	if((3<=i));then gcd-critical 0 "There are $i back up files of $f" | tee -a run/$gcd_JOBID.log;return $gcd_BACKUP_ERROR;fi
 	gcd-critical 2 Backup mv "$f" "$f.~$i~"
 }
 
@@ -543,11 +550,18 @@ gcd-run-job_(){	# run-job, assuming under the JOBPATH, changes gcd_JOBRETURN
 	gcd-critical 2 sourceJOB source JOB
 	if((0>=time_limit));then time_limit=$(gcd-guess-time-limit);fi
 	if((0>=update_time));then update_time=$(gcd-guess-update-time);fi
-	[[ -a $output_path ]] && gcd-backup "$output_path"
-	[[ -a $error_path ]] && gcd-backup "$error_path"
-	gcd_JOBRETURN=$gcd_MISC_ERROR
-	gcd-log 0 Run gcd-care $update_time "$output_path" gcd-sys-run-job "$output_path" "$error_path" "${run[@]}"
-	gcd_JOBRETURN=$?
+	local -i fail_backup=0
+	if [[ -a $output_path ]];then gcd-backup "$output_path";fail_backup=$?;fi
+	if [[ -a $error_path  ]];then gcd-backup "$error_path" ;fail_backup=$?;fi
+	if((0!=fail_backup));then
+		gcd-critical 0 "Backup returns $fail_backup, abort" | tee -a run/$gcd_JOBID.log
+		gcd-abort "Backup failed with $fail_backup" "$gcd_JOBID"
+		gcd_JOBRETURN=$fail_backup
+	else
+		gcd_JOBRETURN=$gcd_MISC_ERROR
+		gcd-log 0 Run gcd-care $update_time "$output_path" gcd-sys-run-job "$output_path" "$error_path" "${run[@]}"
+		gcd_JOBRETURN=$?
+	fi
 	return $gcd_JOBRETURN
 }
 gcd-run-job-return(){ gcd-return $gcd_JOBRETURN "$gcd_JOBPATH" "$gcd_JOBID";}

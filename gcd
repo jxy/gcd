@@ -441,7 +441,7 @@ gcd-check-health(){   # assuming output file exists and ready to be checked
 		fi
 	else
 		gcd-log 0 "max IDLE TIME $idle_time_max seconds" | tee -a run/$gcd_JOBID.log
-		if((9*tl<10*idle_time_max));then gcd-critical 1 "IDLE TIME $idle_time_max seconds approaching limit";fi | tee -a run/$gcd_JOBID.log
+		if((0<tl&&9*tl<10*idle_time_max));then gcd-critical 1 "IDLE TIME $idle_time_max seconds approaching limit";fi | tee -a run/$gcd_JOBID.log
 		gcd-log 2 "Died"
 		return $gcd_HEALTH_DIED
 	fi

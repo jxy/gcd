@@ -1,4 +1,6 @@
 # For testing scripts on mira
+if [[ -z ${testing_state+X} ]];then declare -r testing_state="$gcd_WORKDIR/testing.$COBALT_JOBID.state";fi
+rm -rf "$testing_state"
 test-part-save(){ local -i i
 	for((i=0;i<${#test_boot_sizes[@]};++i));do
 		echo ${test_boot_sizes[i]} ${test_boot_sizes_n[i]} ${test_free_sizes_n[i]}

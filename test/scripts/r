@@ -9,10 +9,8 @@ declare -r COBALT_PARTNAME="$3"
 declare -ir COBALT_ENDTIME=$4
 shift 4
 
+declare -i gcd_TEST=1
 source ../gcd "$@"
-
-declare -r testing_state="$gcd_WORKDIR/testing.$COBALT_JOBID.state"
-rm -f "$testing_state"
 
 gcd_HEALTH_CHECK_WAIT=0.02
 gcd_MANAGE_CHECK_WAIT=0.02

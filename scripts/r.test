@@ -1,0 +1,13 @@
+#!/bin/bash
+# Universal job scripts.
+set -u
+cd "$(dirname "$(perl -e 'use Cwd "abs_path";print abs_path(shift)' "$0")")"
+
+declare -r COBALT_JOBID=TESTING.COBALT
+declare -ir COBALT_JOBSIZE=1024
+declare -r COBALT_PARTNAME=P-1024-TEST
+declare -ir COBALT_ENDTIME=$(($(date +%s)+3600*6))
+
+declare -i gcd_TEST=1
+source ../gcd -v "$@"
+gcd-manage

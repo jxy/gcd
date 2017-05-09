@@ -28,10 +28,6 @@ declare -i gcd_VERBOSITY=1	# verbosity 0: failure only, 1: important info, 2: ev
 
 # default to mira for now
 source "$gcd_UTILDIR/mira"
-if [[ -s ../scripts/testing.mira ]];then
-	echo '### TESTING MODE ###'
-	source ../scripts/testing.mira
-fi
 
 declare -r gcd_CRITICAL="$gcd_WORKDIR/CRITICAL"
 declare -r gcd_LOCK="$gcd_WORKDIR/.lock"	# lock for updating states
@@ -75,6 +71,11 @@ declare -i gcd_PROC_LVL=0
 declare -r gcd_JOBID_RE='^[^ 	#].*$'
 
 declare -ar gcd_LOG_FUNCS=(gcd-caller gcd-info gcd-log gcd-critical gcd-exit-trap gcd-exit-announce gcd-sig)
+
+if [[ ! -z ${gcd_TEST+X} ]];then
+	echo '### TESTING MODE ###'
+	source "$gcd_UTILDIR/testing.mira"
+fi
 
 gcd-caller(){	# Information of the caller without the logging facility
 	local -i n

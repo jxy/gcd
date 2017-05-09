@@ -33,8 +33,10 @@ FILES
 		of 5 items: the number of jobs to submit, the size
 		(in number of nodes), the time (in minutes), the
 		project name, and extra parameters for a preferred
-		path and/or preferred categories.  Other global variables
-		can be set here, but only without the prefix `gcd'.
+		path and / or preferred categories.  Setting
+		`gcd_RESUBMIT' to 0 stops the job script to resubmit
+		itself after finishes.  Other global variables can be
+		set here, but only without the prefix `gcd'.
 
 	util/*
 		Scripts to be sourced that defines useful platform

@@ -57,6 +57,7 @@ declare -ir gcd_HEALTH_DIED=32	# return code for finished processes
 declare -ir gcd_HW_ERROR=42
 
 declare -a gcd_CONF_PLAN
+declare -i gcd_RESUBMIT=1
 source "$gcd_CONF"
 
 declare -a gcd_JOBS_PT	# jobpath
@@ -681,7 +682,7 @@ gcd-manage_(){
 	t=0;for((i=0;i<${#gcd_JSIZES[@]};++i));do ((t+=gcd_JSIZES[i]*gcd_JTIME[i]));done
 	gcd-log 1 "Productivity (with manage overhead): $t / $n : $((100*t/n))%"
 }
-gcd-manage(){ gcd-with-exit-trap 1 gcd-sys-submit-self gcd-manage_;}
+gcd-manage(){ if((0<gcd_RESUBMIT));then gcd-with-exit-trap 1 gcd-sys-submit-self gcd-manage_;else gcd-manage_;fi;}
 
 if [[ -z ${gcd_SYS_UNIQUEID+X} ]];then gcd-process-init "GCD";else gcd-process-init "GCD($gcd_SYS_UNIQUEID)";fi
 while(($#>0));do

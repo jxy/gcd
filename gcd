@@ -379,7 +379,7 @@ gcd-fetch_(){	# Used in gcd-fetch with a lock.
 	gcd_SERVED_IX=($(gcd-merge-sort gcd-compare-served-blocksize ${ix[@]}))	# directly use the output for ix is 0..n-1
 	return 0
 }
-gcd-fetch(){	# Populates gcd_SERVED_SIZE gcd_SERVED_JOBPATH gcd_SERVED_JOBID
+gcd-fetch(){	# Populates gcd_SERVED_SIZE gcd_SERVED_STARTED gcd_SERVED_IX gcd_SERVED_JOBPATH gcd_SERVED_JOBID
 	# args: BLOCKSIZE TIMELIMIT
 	local -ir req_blocksize=$1
 	local -ir req_timelimit=$2
@@ -622,7 +622,8 @@ gcd-launch_(){	# Alloc or boot, and launch, should be run with 'gcd-with-exit-tr
 			gcd-launch-job "${gcd_SERVED_JOBPATH[i]}" "${gcd_SERVED_JOBID[i]}" ${gcd_SERVED_SIZE[i]} $gcd_SYS_BOOTEDBLOCK
 			gcd_SERVED_STARTED[i]=1
 		done
-		if((gcd_SERVED_SIZE[i-1]==gcd_SYS_BLOCKSIZE_DEFAULT));then
+		local -ir smallest=$((gcd_SERVED_IX[${#gcd_SERVED_IX[@]}-1]))
+		if((gcd_SERVED_SIZE[smallest]==gcd_SYS_BLOCKSIZE_DEFAULT));then
 			# When gcd-sys-alloc receives gcd_SYS_BLOCKSIZE_DEFAULT, it may creates more blocks than the jobs we fetched,
 			# if previous unsuccessful job launches leave those blocks unused, and meanwhile new jobs become available.
 			# We try to consume those partitions here.

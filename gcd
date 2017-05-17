@@ -47,6 +47,7 @@ declare -ir gcd_NOT_ENOUGH_JOBS=11
 declare -ir gcd_CANNOT_START=12
 declare -ir gcd_MISC_ERROR=13
 declare -ir gcd_BACKUP_ERROR=14
+declare -ir gcd_LOCKFAIL=15
 declare -ir gcd_JOB_SERVED=16
 declare -ir gcd_HEALTH_BAD=31	# return code for bad health
 declare -ir gcd_HEALTH_DIED=32	# return code for finished processes
@@ -412,12 +413,13 @@ gcd-abort(){	# Stop a job from starting that requires attention
 }
 
 gcd-lock(){	# gcd-lock LOCKFILE CMD [ARGS...]
- 	local -r lock="$1"; shift
- 	local -i n=0
+	local -r lock="$1"; shift
+	local -i n=0 f=10
 	while ! mkdir "$lock" 2>/dev/null;do
 		sleep 0.1
 		n+=1
-		if((0==n%30));then gcd-critical 1 "Still waiting for lock: $lock";fi
+		if((0==n%30));then ((--f));gcd-critical 1 "Still waiting for lock: $lock [$f]";fi
+		if((0==f));then gcd-critical 0 "Quit acquiring lock: $lock";exit $gcd_LOCKFAIL;fi
 	done
 	#if((30<n));then gcd-critical 1 "Lock $lock acquired";fi
 	gcd-with-exit-trap 2 rmdir "$lock" "$@"

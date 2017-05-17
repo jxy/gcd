@@ -257,13 +257,14 @@ gcd-merge-sort(){	# Print indices to a list representing a stable sort, wraps gc
 	# args: CMPFUNC ITEM0 ITEM1 ...
 	# CMPFUNC is run without quote
 	local -i i n=$(($#-1))
+	if((0==n));then return;fi
 	local -ai ix
 	for((i=0;i<n;++i));do ix[i]=$i;done
 	gcd-merge-sort_ "$1" $n ${ix[@]} "${@:2}"
 }
 gcd-merge-sort_(){	# Print sorted indices
-	# args: CMPFUNC NINDEX INDEX0 INDEX1 ... INDEXN ITEM0 ITEM1 ...
-	#       1       2      3      4          2+n    3+n   4+n
+	# args: CMPFUNC NINDEX INDEX0 INDEX1 ... INDEXN-1 ITEM0 ITEM1 ...
+	#       1       2      3      4          2+n      3+n   4+n
 	local -i n=$2
 	local -ai z
 	if((0==n));then return;elif((1==n));then z=($3)

@@ -235,6 +235,8 @@ gcd-get-jobs-prop(){	# Reads PROP under each JOBPATH
 	local c
 	local -i i
 	for c in "${gcd_PREFER_CATEGORY[@]}";do
+		if [[ -z $c ]];then continue;fi  # An empty string breaks the gcd-merge-sort call with gcd-compare-category.
+		gcd-log 2 "Sort by category: '$c'"
 		# this is the proper way to use gcd-merge-sort, note that the output is a sorted list of indices.
 		ix=();for i in $(gcd-merge-sort "gcd-compare-category $c" ${gcd_JOBS_IX[@]});do ix+=(${gcd_JOBS_IX[i]});done
 		gcd_JOBS_IX=(${ix[@]})
@@ -694,6 +696,7 @@ while(($#>0));do
 	case $1 in
 	-v)gcd_VERBOSITY=2;shift;;
 	-s)gcd_VERBOSITY=0;shift;;
+	'')shift;;
 	*)if [[ -s $gcd_JOBDIR/$1/PROP ]];then gcd_PREFER_PATH+=("$gcd_JOBDIR/$1");else gcd_PREFER_CATEGORY+=("$1");fi;shift
 	esac
 done
